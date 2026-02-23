@@ -1,4 +1,4 @@
-import 'package:fluttersdk_magic/fluttersdk_magic.dart';
+import 'package:magic/magic.dart';
 
 import 'contracts/social_driver.dart';
 import 'contracts/social_auth_handler.dart';
