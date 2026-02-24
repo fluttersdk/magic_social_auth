@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_social_auth/src/social_auth_manager.dart';
-import 'package:fluttersdk_magic_social_auth/src/contracts/social_driver.dart';
-import 'package:fluttersdk_magic_social_auth/src/models/social_token.dart';
-import 'package:fluttersdk_magic_social_auth/src/models/social_platform.dart';
+import 'package:magic_social_auth/src/social_auth_manager.dart';
+import 'package:magic_social_auth/src/contracts/social_driver.dart';
+import 'package:magic_social_auth/src/models/social_token.dart';
+import 'package:magic_social_auth/src/models/social_platform.dart';
 
 /// Mock driver for testing
 class MockDriver extends SocialDriver {

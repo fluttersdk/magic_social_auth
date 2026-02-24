@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_social_auth/src/exceptions/social_auth_exception.dart';
+import 'package:magic_social_auth/src/exceptions/social_auth_exception.dart';
 
 void main() {
   group('SocialAuthException', () {

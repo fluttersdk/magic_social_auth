@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_social_auth/src/models/social_platform.dart';
+import 'package:magic_social_auth/src/models/social_platform.dart';
 
 void main() {
   group('SocialPlatformExtension', () {

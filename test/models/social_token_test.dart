@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_social_auth/src/models/social_token.dart';
+import 'package:magic_social_auth/src/models/social_token.dart';
 
 void main() {
   group('SocialToken', () {

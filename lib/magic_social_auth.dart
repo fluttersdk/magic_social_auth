@@ -24,3 +24,7 @@ export 'src/models/social_platform.dart';
 
 // Exceptions
 export 'src/exceptions/social_auth_exception.dart';
+
+// UI
+export 'src/ui/social_auth_buttons.dart';
+export 'src/ui/social_provider_icons.dart';

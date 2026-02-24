@@ -7,6 +7,7 @@ import 'drivers/microsoft_driver.dart';
 import 'drivers/github_driver.dart';
 import 'models/social_token.dart';
 import 'exceptions/social_auth_exception.dart';
+import 'ui/social_provider_icons.dart';
 
 /// Manages social authentication drivers.
 ///
@@ -130,6 +131,25 @@ class SocialAuthManager {
   Map<String, dynamic> _getConfig(String name) {
     return Config.get<Map<String, dynamic>>('social_auth.providers.$name') ??
         {};
+  }
+
+  /// Register UI metadata for a custom social auth provider.
+  ///
+  /// Use alongside [extend] when adding custom drivers so the
+  /// [SocialAuthButtons] widget can render the provider automatically.
+  ///
+  /// ```dart
+  /// SocialAuth.manager.registerProviderDefaults('apple', SocialProviderDefaults(
+  ///   label: 'Apple',
+  ///   iconSvg: '<svg>...</svg>',
+  ///   order: 4,
+  /// ));
+  /// ```
+  void registerProviderDefaults(
+    String provider,
+    SocialProviderDefaults defaults,
+  ) {
+    SocialProviderIcons.register(provider, defaults);
   }
 
   /// Reset all drivers (for testing).
