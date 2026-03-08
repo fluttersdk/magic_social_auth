@@ -40,7 +40,8 @@ void main() {
     test('supports some desktop platforms', () {
       // Microsoft driver supports macos and windows (but not linux)
       expect(driver.supportedPlatforms.contains(SocialPlatform.macos), isTrue);
-      expect(driver.supportedPlatforms.contains(SocialPlatform.windows), isTrue);
+      expect(
+          driver.supportedPlatforms.contains(SocialPlatform.windows), isTrue);
       expect(driver.supportedPlatforms.contains(SocialPlatform.linux), isFalse);
     });
 
@@ -48,7 +49,8 @@ void main() {
       expect(driver.config['client_id'], 'test-microsoft-client-id');
       expect(driver.config['tenant'], 'common');
       expect(driver.config['callback_scheme'], 'myapp');
-      expect(driver.config['web_callback_url'], 'http://localhost:3000/callback');
+      expect(
+          driver.config['web_callback_url'], 'http://localhost:3000/callback');
       expect(driver.config['scopes'], ['openid', 'profile', 'email']);
     });
 

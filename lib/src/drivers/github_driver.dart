@@ -19,21 +19,20 @@ class GithubDriver extends SocialDriver {
 
   @override
   Set<SocialPlatform> get supportedPlatforms => {
-    SocialPlatform.ios,
-    SocialPlatform.android,
-    SocialPlatform.web,
-    SocialPlatform.macos,
-    SocialPlatform.windows,
-    SocialPlatform.linux,
-  };
+        SocialPlatform.ios,
+        SocialPlatform.android,
+        SocialPlatform.web,
+        SocialPlatform.macos,
+        SocialPlatform.windows,
+        SocialPlatform.linux,
+      };
 
   @override
   Future<SocialToken> getToken() async {
     final clientId = config['client_id'] as String?;
     final callbackScheme = config['callback_scheme'] as String? ?? 'uptizm';
     final webCallbackUrl = config['web_callback_url'] as String?;
-    final scopes =
-        (config['scopes'] as List<dynamic>?)?.cast<String>() ??
+    final scopes = (config['scopes'] as List<dynamic>?)?.cast<String>() ??
         ['read:user', 'user:email'];
 
     if (clientId == null) {

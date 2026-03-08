@@ -18,12 +18,12 @@ class MicrosoftDriver extends SocialDriver {
 
   @override
   Set<SocialPlatform> get supportedPlatforms => {
-    SocialPlatform.ios,
-    SocialPlatform.android,
-    SocialPlatform.web,
-    SocialPlatform.macos,
-    SocialPlatform.windows,
-  };
+        SocialPlatform.ios,
+        SocialPlatform.android,
+        SocialPlatform.web,
+        SocialPlatform.macos,
+        SocialPlatform.windows,
+      };
 
   @override
   Future<SocialToken> getToken() async {
@@ -31,8 +31,7 @@ class MicrosoftDriver extends SocialDriver {
     final tenant = config['tenant'] as String? ?? 'common';
     final callbackScheme = config['callback_scheme'] as String? ?? 'uptizm';
     final webCallbackUrl = config['web_callback_url'] as String?;
-    final scopes =
-        (config['scopes'] as List<dynamic>?)?.cast<String>() ??
+    final scopes = (config['scopes'] as List<dynamic>?)?.cast<String>() ??
         ['openid', 'profile', 'email'];
 
     if (clientId == null) {

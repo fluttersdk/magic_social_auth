@@ -16,7 +16,7 @@ class SocialAuthException implements Exception {
 /// Thrown when user cancels the authentication flow.
 class SocialAuthCancelledException extends SocialAuthException {
   const SocialAuthCancelledException()
-    : super('Authentication was cancelled by user');
+      : super('Authentication was cancelled by user');
 }
 
 /// Thrown when a provider is not supported on the current platform.
@@ -27,5 +27,5 @@ class UnsupportedPlatformException extends SocialAuthException {
 /// Thrown when a provider is not configured or enabled.
 class ProviderNotConfiguredException extends SocialAuthException {
   const ProviderNotConfiguredException(String provider)
-    : super('Provider "$provider" is not configured');
+      : super('Provider "$provider" is not configured');
 }

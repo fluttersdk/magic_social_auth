@@ -49,13 +49,13 @@ class SocialToken {
 
   /// Convert to map for API requests.
   Map<String, dynamic> toMap() => {
-    'provider': provider,
-    'access_token': accessToken,
-    if (authorizationCode != null) 'authorization_code': authorizationCode,
-    if (idToken != null) 'id_token': idToken,
-    if (email != null) 'email': email,
-    if (name != null) 'name': name,
-    if (avatarUrl != null) 'avatar_url': avatarUrl,
-    if (extra != null) ...extra!,
-  };
+        'provider': provider,
+        'access_token': accessToken,
+        if (authorizationCode != null) 'authorization_code': authorizationCode,
+        if (idToken != null) 'id_token': idToken,
+        if (email != null) 'email': email,
+        if (name != null) 'name': name,
+        if (avatarUrl != null) 'avatar_url': avatarUrl,
+        if (extra != null) ...extra!,
+      };
 }

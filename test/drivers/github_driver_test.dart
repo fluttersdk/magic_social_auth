@@ -39,14 +39,16 @@ void main() {
     test('supports desktop platforms', () {
       // GitHub driver supports all platforms including desktop
       expect(driver.supportedPlatforms.contains(SocialPlatform.macos), isTrue);
-      expect(driver.supportedPlatforms.contains(SocialPlatform.windows), isTrue);
+      expect(
+          driver.supportedPlatforms.contains(SocialPlatform.windows), isTrue);
       expect(driver.supportedPlatforms.contains(SocialPlatform.linux), isTrue);
     });
 
     test('config is accessible', () {
       expect(driver.config['client_id'], 'test-github-client-id');
       expect(driver.config['callback_scheme'], 'myapp');
-      expect(driver.config['web_callback_url'], 'http://localhost:3000/callback');
+      expect(
+          driver.config['web_callback_url'], 'http://localhost:3000/callback');
       expect(driver.config['scopes'], ['read:user', 'user:email']);
     });
 
