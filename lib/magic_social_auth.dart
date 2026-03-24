@@ -1,5 +1,3 @@
-library magic_social_auth;
-
 // Facade
 export 'src/facades/social_auth.dart';
 

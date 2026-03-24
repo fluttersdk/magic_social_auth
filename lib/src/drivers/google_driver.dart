@@ -49,22 +49,18 @@ class GoogleDriver extends SocialDriver {
       final authClient = signIn.authorizationClient;
       final authorization = await authClient.authorizeScopes(scopes);
 
-      if (authorization != null) {
-        Log.info('Google authorization successful');
+      Log.info('Google authorization successful');
 
-        // Web authorization only gives access_token
-        // Backend will fetch user info from Google's userinfo API
-        return SocialToken(
-          provider: name,
-          accessToken: authorization.accessToken,
-          idToken: null,
-          email: null,
-          name: null,
-          avatarUrl: null,
-        );
-      }
-
-      throw const SocialAuthException('Google authorization failed');
+      // Web authorization only gives access_token
+      // Backend will fetch user info from Google's userinfo API
+      return SocialToken(
+        provider: name,
+        accessToken: authorization.accessToken,
+        idToken: null,
+        email: null,
+        name: null,
+        avatarUrl: null,
+      );
     } on SocialAuthException {
       rethrow;
     } on GoogleSignInException catch (e) {
