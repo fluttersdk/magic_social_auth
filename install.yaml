@@ -1,0 +1,49 @@
+# magic_social_auth install manifest (PluginInstaller DSL schema v1).
+#
+# SocialAuth is a Magic-side plugin: install registers
+# SocialAuthArtisanProvider into the consumer's lib/app/_plugins.g.dart
+# codegen barrel AND injects SocialAuthServiceProvider into
+# lib/config/app.dart's providers list so the Magic IoC container resolves
+# the runtime SocialAuth facade.
+#
+# No stub files are published: provider OAuth client credentials are
+# scaffolded on demand by `dart run artisan social:install` (writes
+# lib/config/social_auth.dart with Google / Apple / GitHub entries gated
+# on the user's --providers selection).
+#
+# See doc/install_yaml_schema.md (in fluttersdk_artisan) for the full schema.
+
+plugin_name: magic_social_auth
+
+publish: {}
+
+magic:
+  provider: SocialAuthServiceProvider
+
+post_install:
+  message: |
+    magic_social_auth plugin:installed. Bootstrap workflow:
+
+    1. Verify the IoC wiring (auto-injected by `magic:install`):
+
+         lib/config/app.dart:
+           providers: [
+             ...,
+             (app) => SocialAuthServiceProvider(app),
+           ],
+
+    2. Scaffold the OAuth provider config (Google / Apple / GitHub):
+
+         dart run artisan social:install --providers=google,apple
+         # writes lib/config/social_auth.dart with the selected provider entries
+         # + magic_starter LoginScreen integration (social buttons row).
+
+    3. Configure each provider's client credentials in your .env:
+
+         GOOGLE_CLIENT_ID=...
+         APPLE_SERVICE_ID=...
+         GITHUB_CLIENT_ID=...
+
+    4. Verify the CLI surface:
+
+         dart run artisan list   # includes social:install
