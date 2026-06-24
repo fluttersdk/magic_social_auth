@@ -41,12 +41,15 @@ class SocialInstallCommand extends ArtisanInstallCommand {
     );
     if (resolved == null || resolved.scheme != 'file') return null;
 
-    // resolved -> <plugin_root>/lib/magic_social_auth.dart; two parent
-    // traversals reach the package root where install.yaml lives.
-    final libBarrel = resolved.toFilePath();
-    final pluginRoot = File(libBarrel).parent.parent.path;
-    final manifestPath = '$pluginRoot/install.yaml';
-    return File(manifestPath).existsSync() ? manifestPath : null;
+    // resolved -> <plugin_root>/lib/magic_social_auth.dart. Resolving '../'
+    // against that file URI drops the barrel filename and the lib/ segment,
+    // landing on the package root where install.yaml lives. Resolving against
+    // the URI keeps separators and normalization correct across platforms
+    // instead of concatenating with a literal '/'.
+    final pluginRootUri = resolved.resolve('../');
+    final manifestUri = pluginRootUri.resolve('install.yaml');
+    final manifestFile = File.fromUri(manifestUri);
+    return manifestFile.existsSync() ? manifestFile.path : null;
   }
 
   @override

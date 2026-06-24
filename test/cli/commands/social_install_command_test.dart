@@ -114,16 +114,32 @@ Map<String, dynamic> get appConfig => {
         expect(exitCode, 1);
       });
 
-      test('dry-run exits 0 or 1 without crashing', () async {
+      test('dry-run previews the staged ops and exits 0', () async {
         final cmd = _TestableSocialInstallCommand(
           manifestPath: realManifestPath,
           projectRoot: tempDir.path,
         );
         seedAppFile();
 
+        // 1. Seed a minimal pubspec.yaml so the installer resolves a real
+        //    project root instead of bailing out with a manifest error.
+        final pubspec = File('${tempDir.path}/pubspec.yaml');
+        pubspec.writeAsStringSync('name: test_app\n');
+
+        // 2. Seed .dart_tool/package_config.json (required by PluginsRegistryFile).
+        final toolDir = Directory('${tempDir.path}/.dart_tool');
+        toolDir.createSync(recursive: true);
+        File('${tempDir.path}/.dart_tool/package_config.json')
+            .writeAsStringSync('{"configVersion":2,"packages":[]}');
+
+        // 3. A real dry-run stages ops without writing and must succeed.
         final exitCode = await cmd.handle(_ctx({'dry-run': true}));
-        // 0 = DryRun preview, 1 = manifest error (acceptable without pubspec).
-        expect(exitCode, isIn([0, 1]));
+        expect(exitCode, 0);
+
+        // 4. Dry-run writes nothing: app.dart stays free of the provider.
+        final appContent =
+            File('${tempDir.path}/lib/config/app.dart').readAsStringSync();
+        expect(appContent, isNot(contains('SocialAuthServiceProvider')));
       });
 
       test('injects SocialAuthServiceProvider into app.dart on success',
@@ -174,22 +190,28 @@ Map<String, dynamic> get appConfig => {
         File('${tempDir.path}/.dart_tool/package_config.json')
             .writeAsStringSync('{"configVersion":2,"packages":[]}');
 
-        // 1. First install.
-        await cmd1.handle(_ctx({'force': true}));
+        // 1. First install must succeed.
+        final firstExit = await cmd1.handle(_ctx({'force': true}));
+        expect(firstExit, 0);
 
-        // 2. Second install (new command instance, same project).
-        await cmd2.handle(_ctx({'force': true}));
+        // 2. Second install (new command instance, same project) must succeed.
+        final secondExit = await cmd2.handle(_ctx({'force': true}));
+        expect(secondExit, 0);
 
-        // 3. Provider must appear exactly once.
+        // 3. Match the provider CLOSURE entry, not raw occurrences: the
+        //    installer adds an import line AND the providers-list entry, so
+        //    counting the bare class name would overcount. The closure
+        //    `(app) => SocialAuthServiceProvider(app),` is what must appear
+        //    exactly once across both runs.
         final appContent =
             File('${tempDir.path}/lib/config/app.dart').readAsStringSync();
-        final matches = RegExp(
-          r'SocialAuthServiceProvider',
+        final entries = RegExp(
+          r'\(app\)\s*=>\s*SocialAuthServiceProvider\(app\),',
         ).allMatches(appContent);
         expect(
-          matches.length,
+          entries.length,
           1,
-          reason: 'SocialAuthServiceProvider must not be injected twice',
+          reason: 'SocialAuthServiceProvider entry must not be injected twice',
         );
       });
     });

@@ -20,10 +20,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  magic: ^1.0.0-alpha.14
+  magic: ^0.0.3
   google_sign_in: ^7.2.0
   flutter_web_auth_2: ">=4.0.0 <6.0.0"
-  fluttersdk_artisan: ^0.0.7
+  fluttersdk_artisan: ^0.0.8
 
 dev_dependencies:
   flutter_test:
