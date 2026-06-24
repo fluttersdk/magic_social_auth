@@ -2,7 +2,7 @@
 
 Social authentication plugin for Magic Framework. Laravel Socialite-style API with extensible drivers.
 
-**Version:** 0.0.1-alpha.1 · **Dart:** >=3.6.0 · **Flutter:** >=3.27.0
+**Version:** 0.0.1 · **Dart:** >=3.6.0 · **Flutter:** >=3.27.0
 
 ## Commands
 

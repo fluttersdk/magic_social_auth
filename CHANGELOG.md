@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-06-24
+
 ### 📚 Documentation
 - **README**: Rewrite to match Magic ecosystem format
 - **doc/ folder**: Add comprehensive documentation
