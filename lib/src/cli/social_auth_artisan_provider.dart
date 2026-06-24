@@ -9,13 +9,13 @@ import 'commands/social_install_command.dart';
 /// // lib/config/app.dart
 /// final appConfig = {
 ///   'artisan': {
-///     'providers': [SocialAuthArtisanProvider.new],
+///     'providers': [MagicSocialAuthArtisanProvider.new],
 ///   },
 /// };
 /// ```
 ///
 /// V1 ships 1 command: social:install. Full install logic deferred to V1.x.
-class SocialAuthArtisanProvider extends ArtisanServiceProvider {
+class MagicSocialAuthArtisanProvider extends ArtisanServiceProvider {
   @override
   String get providerName => 'magic_social_auth';
 
