@@ -1,6 +1,6 @@
 name: magic_social_auth
 description: Social authentication plugin for Magic Framework. Laravel Socialite-style API with extensible drivers.
-version: 0.0.1
+version: 0.0.2
 homepage: https://magic.fluttersdk.com/social-auth
 documentation: https://magic.fluttersdk.com/packages/social-auth/getting-started/installation
 repository: https://github.com/fluttersdk/magic_social_auth
@@ -20,7 +20,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  magic: ^0.0.3
+  magic: ^0.0.5
   google_sign_in: ^7.2.0
   flutter_web_auth_2: ">=4.0.0 <6.0.0"
   fluttersdk_artisan: ^0.0.8
