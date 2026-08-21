@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **A failure inside `_accountToToken` escaped the Google driver's error translation.** `getToken`'s native branch did `return _accountToToken(account)` inside the try whose catch clauses are the whole point of the method: they turn a `GoogleSignInException` into `SocialAuthCancelledException` on a user cancel and into `SocialAuthException` otherwise. Returning the future unawaited means anything it throws is raised after the try has already completed, so those handlers never see it and the caller gets a raw exception instead of this package's contract. It is reachable: `_accountToToken` reads `account.authentication.idToken` with no guard of its own, and only its inner `authorizationForScopes` call is wrapped. Now `return await`. Surfaced by the analyzer's `unawaited_return_in_try_block`, which turned `master` red on a newer Dart than the PR that last touched the file ran against, and the warning was right. (`lib/src/drivers/google_driver.dart`)
+
 ## [0.0.2] - 2026-07-26
 
 ### Changed
