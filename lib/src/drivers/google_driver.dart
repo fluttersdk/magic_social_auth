@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:magic/magic.dart';
 
@@ -28,26 +28,48 @@ class GoogleDriver extends SocialDriver {
         SocialPlatform.web,
       };
 
+  /// Whether the platform offers the native sign-in sheet.
+  ///
+  /// A seam, not indirection for its own sake: everything below it talks to the
+  /// platform channel, so without something to override a test cannot reach
+  /// [getToken]'s try/catch at all, which is where this driver's whole contract
+  /// lives.
+  @visibleForTesting
+  bool get supportsNativeSignIn => GoogleSignIn.instance.supportsAuthenticate();
+
+  /// Runs the native sheet and converts the account it returns.
+  ///
+  /// Overridden in tests to stand in for the platform channel. See
+  /// [supportsNativeSignIn] for why the seam exists.
+  @visibleForTesting
+  Future<SocialToken> nativeSignIn() async {
+    final account = await GoogleSignIn.instance.authenticate();
+    return await accountToToken(account);
+  }
+
+  /// Prepares the SDK, exposed so a test can stand in for the platform channel.
+  @visibleForTesting
+  Future<void> ensureInitialized() => _ensureInitialized();
+
   @override
   Future<SocialToken> getToken() async {
-    await _ensureInitialized();
+    await ensureInitialized();
 
     try {
-      final signIn = GoogleSignIn.instance;
       final scopes = (config['scopes'] as List<dynamic>?)?.cast<String>() ??
           ['email', 'profile'];
 
       // Mobile: Use native authenticate
-      if (signIn.supportsAuthenticate()) {
-        final account = await signIn.authenticate();
+      if (supportsNativeSignIn) {
         // `await`, not a bare return: this sits inside the try whose catch
         // clauses are what turn a provider error into SocialAuthException /
         // SocialAuthCancelledException. Returning the future unawaited lets
-        // anything `_accountToToken` throws (reading
-        // `account.authentication.idToken` is not guarded there) skip those
-        // handlers and reach the caller raw, breaking the driver's contract.
-        return await _accountToToken(account);
+        // anything the native path throws skip those handlers and reach the
+        // caller raw, breaking the driver's contract.
+        return await nativeSignIn();
       }
+
+      final signIn = GoogleSignIn.instance;
 
       // Web: Skip FedCM One Tap, go directly to authorization popup
       Log.info('Starting Google authorization popup...');
@@ -81,8 +103,9 @@ class GoogleDriver extends SocialDriver {
     }
   }
 
-  /// Convert account to SocialToken
-  Future<SocialToken> _accountToToken(GoogleSignInAccount account) async {
+  /// Convert account to SocialToken.
+  @visibleForTesting
+  Future<SocialToken> accountToToken(GoogleSignInAccount account) async {
     final idToken = account.authentication.idToken;
     final scopes = (config['scopes'] as List<dynamic>?)?.cast<String>() ??
         ['email', 'profile'];

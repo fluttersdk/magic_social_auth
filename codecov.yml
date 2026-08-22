@@ -1,0 +1,36 @@
+# Codecov configuration.
+#
+# `project` is the real gate: total coverage may not fall, give or take a
+# rounding-sized wobble between runs.
+#
+# `patch` is informational rather than blocking, and the reason is specific to
+# what this package is. magic_social_auth is a thin wrapper over three provider
+# SDKs (google_sign_in, flutter_web_auth_2) whose calls only exist behind a
+# platform channel, so the lines that reach them cannot execute in a unit test
+# at all: `GoogleSignIn.instance.initialize()`, `.authenticate()`, the account
+# object those return. A one-line fix in one of those branches therefore scores
+# 0% patch coverage no matter how well the surrounding behaviour is tested,
+# which is what happened on #10 (`return await` instead of a bare return, a real
+# defect the analyzer caught and a test cannot reach).
+#
+# Blocking on that number would push exactly the wrong way: either invent an
+# injection seam for every platform call, or write assertions like "this throws
+# without a channel" purely to colour a line green. So patch reports and does
+# not block, and `project` is what keeps coverage honest.
+#
+# What is expected instead, and is not automatable: a fix in a platform-bound
+# branch comes with a test of the behaviour AROUND it. #10's follow-up is the
+# shape to copy: the native path is behind a `@visibleForTesting` seam and four
+# tests pin the driver's error-translation contract (a raw error becomes
+# SocialAuthException, a cancel becomes SocialAuthCancelledException, an
+# already-ours exception is rethrown unchanged, a success returns its token).
+# Two of those four fail if the `await` is removed.
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        informational: true
