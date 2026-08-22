@@ -40,7 +40,13 @@ class GoogleDriver extends SocialDriver {
       // Mobile: Use native authenticate
       if (signIn.supportsAuthenticate()) {
         final account = await signIn.authenticate();
-        return _accountToToken(account);
+        // `await`, not a bare return: this sits inside the try whose catch
+        // clauses are what turn a provider error into SocialAuthException /
+        // SocialAuthCancelledException. Returning the future unawaited lets
+        // anything `_accountToToken` throws (reading
+        // `account.authentication.idToken` is not guarded there) skip those
+        // handlers and reach the caller raw, breaking the driver's contract.
+        return await _accountToToken(account);
       }
 
       // Web: Skip FedCM One Tap, go directly to authorization popup
