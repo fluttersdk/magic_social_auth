@@ -19,7 +19,7 @@ Social authentication for Flutter apps using the Magic Framework. Laravel Social
 |---|---|
 | Dart SDK | `>=3.6.0 <4.0.0` |
 | Flutter | `>=3.27.0` |
-| magic | `^1.0.0-alpha.3` |
+| magic | `^0.0.5` |
 
 ---
 
