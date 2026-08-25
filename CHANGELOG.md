@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-08-25
+
 ### Added
 - **The Google driver's error-translation contract has tests, and a seam to reach it through.** `getToken`'s try/catch is the whole contract consumers code against: a provider failure becomes `SocialAuthException`, a user cancel becomes `SocialAuthCancelledException` so "backed out" can be told from "failed", and an exception that is already ours is rethrown unchanged. Nothing covered any of it, because every route into that code runs through the platform channel. `supportsNativeSignIn`, `nativeSignIn` and `ensureInitialized` are now `@visibleForTesting` members a test subclass stands in for, and `_accountToToken` is `accountToToken` for the same reason. Four tests pin the contract; two of them fail if the `await` added in #10 is removed, so the fix has a regression guard rather than only an analyzer warning. Additive: no existing call site changes. (`lib/src/drivers/google_driver.dart`, `test/drivers/google_driver_test.dart`)
 - **`codecov.yml`, with patch coverage informational and project coverage still a gate.** This package is a thin wrapper over provider SDKs whose calls only exist behind a platform channel, so a one-line fix in one of those branches scores 0% patch coverage however well the surrounding behaviour is tested. That is what happened on #10. Blocking on the number pushes toward inventing a seam for every platform call, or writing assertions like "this throws without a channel" purely to colour a line green. Total coverage is the honest gate and it went 55.0% -> 57.0% with the tests above. (`codecov.yml`)

@@ -62,7 +62,7 @@ Adding social login to a Flutter app means juggling platform-specific SDKs, OAut
 
 ```yaml
 dependencies:
-  magic_social_auth: ^0.0.1-alpha.1
+  magic_social_auth: ^0.0.3
 ```
 
 ### 2. Register the service provider
