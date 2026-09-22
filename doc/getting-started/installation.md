@@ -29,7 +29,7 @@ Add `magic_social_auth` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  magic_social_auth: ^0.0.4
+  magic_social_auth: ^0.0.5
 ```
 
 Then fetch dependencies:
