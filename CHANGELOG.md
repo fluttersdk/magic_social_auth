@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-09-27
+
+### Changed
+
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.16` to `^0.0.22`; `fluttersdk_artisan` stays at `^0.0.16`, still the newest. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floor names the release this package is verified against. magic 0.0.22's BREAKING changes (`Magic.delete` disposing the notifier it removes, `MagicTest.init()` resetting the Gate and Translator, `Min`/`Max` reading a numeric string by value beside `Numeric`) touch nothing this package calls. The installation guide's requirements table, which still named `magic ^0.0.5`, now matches. (`pubspec.yaml`, `doc/getting-started/installation.md`)
+
 ## [0.0.5] - 2026-09-22
 
 ### Changed
