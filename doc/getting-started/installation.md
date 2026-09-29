@@ -19,7 +19,7 @@ Social authentication for Flutter apps using the Magic Framework. Laravel Social
 |---|---|
 | Dart SDK | `>=3.6.0 <4.0.0` |
 | Flutter | `>=3.27.0` |
-| magic | `^0.0.22` |
+| magic | `^0.0.24` |
 
 ---
 
@@ -29,7 +29,7 @@ Add `magic_social_auth` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  magic_social_auth: ^0.0.6
+  magic_social_auth: ^0.0.7
 ```
 
 Then fetch dependencies:
