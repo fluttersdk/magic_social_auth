@@ -1,11 +1,11 @@
 # Drivers
 
-A driver encapsulates the provider-specific authentication logic — opening the native SDK or OAuth browser, waiting for user consent, and returning a `SocialToken`. The `SocialAuthManager` resolves drivers by name and caches instances for the lifetime of the application.
+A driver runs one provider's flow and answers what the backend concluded. It never logs the app in itself: it returns a `SocialAuthResult`, and the caller decides what a session, a 2FA challenge or a cancelled deletion means (see [Flows](flows.md)). `SocialAuthManager` resolves drivers by name and caches them for the lifetime of the app.
 
 ## Table of Contents
 
 - [SocialDriver Contract](#socialdriver-contract)
-- [SocialToken Model](#socialtoken-model)
+- [SocialAuthResult](#socialauthresult)
 - [Built-in Drivers](#built-in-drivers)
 - [Platform Support Matrix](#platform-support-matrix)
 - [Registering a Custom Driver](#registering-a-custom-driver)
@@ -14,209 +14,146 @@ A driver encapsulates the provider-specific authentication logic — opening the
 
 ## <a name="socialdriver-contract"></a>SocialDriver Contract
 
-Every driver extends the abstract `SocialDriver` class:
-
 ```dart
 abstract class SocialDriver {
-  SocialDriver(this.config);
+  SocialDriver(this.config, {SocialPlatform? platform});
 
-  final Map<String, dynamic> config;
+  final Map<String, dynamic> config;   // social_auth.providers.<name>
+  final SocialPlatform platform;
 
-  /// Driver name ('google', 'microsoft', 'github', etc.)
+  /// The provider name the backend routes on ('google', 'github', ...).
   String get name;
 
-  /// Platforms this driver supports.
   Set<SocialPlatform> get supportedPlatforms;
-
-  /// Check if the current runtime platform is supported.
   bool supportsPlatform([SocialPlatform? platform]);
 
-  /// Open the provider flow and return a token.
-  Future<SocialToken> getToken();
+  /// Signs in, or registers, with the provider.
+  Future<SocialAuthResult> signIn();
 
-  /// Full auth flow: getToken() → manager.handleAuth(token).
-  /// Drivers inherit this implementation; override only when needed.
-  Future<void> authenticate();
+  /// Prepares a connect and returns the call that opens the provider.
+  Future<Future<SocialAuthResult> Function()> beginConnect(
+    Map<String, String>? proof,
+  );
 
-  /// Sign out from the provider. Default is a no-op.
+  /// Links the provider to the signed-in account in one go.
+  Future<SocialAuthResult> connect(Map<String, String>? proof);
+
+  /// Re-authenticates with a linked provider for a step-up proof.
+  Future<SocialAuthResult> confirm();
+
+  /// Ends the provider SDK's own session, if it keeps one. Default is a no-op.
   Future<void> signOut();
 }
 ```
 
-Call a driver through the `SocialAuth` facade:
+| Method | Backend intent | Answer carries |
+|---|---|---|
+| `signIn()` | `signin` | `token` and `user`, or `isTwoFactor` and `twoFactorToken`; `deletionCancelled` when the sign-in cancelled a scheduled deletion. |
+| `beginConnect(proof)` / `connect(proof)` | `connect` | `connectedProvider`. Needs the caller's bearer token. |
+| `confirm()` | `confirm` | `confirmationToken`, a single-use step-up proof. Needs the caller's bearer token. |
+
+`proof` is the step-up field the account can give: `{'password': ...}`, `{'code': ...}` or `{'confirmation_token': ...}`; `null` for a guest, who sends none. It is minted for this one call; never cache or reuse it.
+
+`beginConnect` exists for the web. A connect needs a link ticket first, which is a network request; a popup opened after an `await` is blocked as not user-initiated. So `beginConnect` does everything that needs the network and returns the call that opens the provider before its own first `await`. Run it from a fresh tap (an explicit "Continue to GitHub" button) and the popup opens. `connect(proof)` is `beginConnect` followed by the opener in one go, for mobile.
+
+On the web a `signIn()` opens the popup in the same synchronous run as the call, so call it straight from the tap handler with no `await` before it.
 
 ```dart
-import 'package:magic_social_auth/magic_social_auth.dart';
+final SocialDriver driver = SocialAuth.driver('github');
 
-// Resolve and call in one line
-await SocialAuth.driver('google').authenticate();
+// Sign in
+final SocialAuthResult result = await driver.signIn();
 
-// Separate resolve and call
-final driver = SocialAuth.driver('google');
-final token = await driver.getToken();   // raw token, no handler
-await driver.authenticate();             // token + handler
+// Connect (mobile)
+await driver.connect({'password': currentPassword});
+
+// Connect (web): prepare, then open from a second tap
+final Future<SocialAuthResult> Function() open = await driver.beginConnect(proof);
+// ...in the next tap handler:
+final SocialAuthResult linked = await open();
 ```
-
-> [!NOTE]
-> `authenticate()` is the standard entry point for UI buttons. Use `getToken()` directly only when you need the raw `SocialToken` before the handler runs.
 
 ---
 
-## <a name="socialtoken-model"></a>SocialToken Model
+## <a name="socialauthresult"></a>SocialAuthResult
 
-`getToken()` returns a `SocialToken` that is passed to the active `SocialAuthHandler`:
+| Field | Type | Set by |
+|---|---|---|
+| `token` | `String?` | A completed sign-in: the Sanctum token. |
+| `user` | `Map<String, dynamic>?` | A completed sign-in: the user resource. |
+| `isTwoFactor` | `bool` | A sign-in on an account with confirmed 2FA. |
+| `twoFactorToken` | `String?` | Same: finish at `auth/two-factor-challenge` with it. |
+| `deletionCancelled` | `bool` | A sign-in that cancelled a scheduled account deletion. |
+| `connectedProvider` | `String?` | A connect. |
+| `confirmationToken` | `String?` | A confirm. |
 
-```dart
-class SocialToken {
-  final String provider;          // 'google', 'microsoft', 'github'
-  final String accessToken;       // OAuth access token (empty for code-exchange flows)
-  final String? authorizationCode; // OAuth code — backend must exchange this
-  final String? idToken;          // JWT id_token (Google, Microsoft)
-  final String? email;
-  final String? name;
-  final String? avatarUrl;
-  final Map<String, dynamic>? extra;
-
-  bool get isCodeExchange => authorizationCode != null;
-
-  Map<String, dynamic> toMap(); // serialised for HTTP POST
-}
-```
-
-Two authentication flows are modelled:
-
-| Flow | `accessToken` | `authorizationCode` | Used by |
-|---|---|---|---|
-| Token flow | non-empty | `null` | Google (mobile & web) |
-| Code exchange | empty string | non-empty | Microsoft, GitHub |
+`AppleSignInResult` extends it with `givenName` and `familyName`: Apple shares the name on the first authorization only and never puts it in the ID token, so pass it on to a profile update or it is lost.
 
 ---
 
 ## <a name="built-in-drivers"></a>Built-in Drivers
 
-### Google (`google`)
+The manager picks the driver that runs on the current platform. `SocialAuth.driver('google')` is a `GoogleDriver` on iOS and Android and a `RedirectDriver` on the web.
 
-Uses the `google_sign_in ^7.x` singleton API.
+### GoogleDriver
 
-- **Mobile (iOS/Android):** calls `GoogleSignIn.instance.authenticate()` — native SDK popup, returns `idToken` + `accessToken`.
-- **Web:** calls `authorizationClient.authorizeScopes()` — browser authorization popup, returns `accessToken` only (no `idToken`). The backend must call Google's `userinfo` API to fetch user details.
+Native Google SDK (`google_sign_in ^7.2.0`) on iOS and Android. The SDK's ID token is posted to `auth/social/google/token`, which verifies it. No nonce goes with it: the backend prohibits one for Google.
 
-Config keys: `client_id`, `server_client_id` (mobile only), `scopes`.
+- Config: `ios_client_id` (iOS only) and `server_client_id` (the ID token's audience). See [Configuration](../getting-started/configuration.md#google).
+- The SDK accepts one `initialize` per process, so every instance shares the first one.
+- `signOut()` signs the SDK out so the next sign-in offers the account picker again.
+- A canceled sheet throws `SocialAuthCancelledException`. Android also reports a misconfigured client (SHA-1, package name, `server_client_id`) as canceled.
 
-```dart
-// google section in social_auth config
-'google': {
-  'enabled': true,
-  'client_id': 'WEB_OR_IOS_CLIENT_ID',
-  'server_client_id': 'SERVER_CLIENT_ID',   // mobile only
-  'scopes': ['email', 'profile'],
-},
-```
+### AppleDriver
 
-### Microsoft (`microsoft`)
+Sign in with Apple through the native sheet on iOS (`sign_in_with_apple ^8.2.0`). Every sheet gets a fresh `Nonce`: Apple receives its lowercase sha256 hex and seals it into the ID token, the backend receives the raw value and checks the two match, so a token lifted from another sign-in is refused. The authorization code goes along for the refresh token that account deletion revokes. The result is an `AppleSignInResult`.
 
-Uses OAuth authorization code flow (PKCE) via `flutter_web_auth_2 ^4.x`. The driver opens the Microsoft login URL in a browser and captures the authorization code from the redirect URI. The backend must exchange the code for tokens.
+### RedirectDriver
 
-Config keys: `client_id` (required), `tenant`, `scopes`, `callback_scheme`, `web_callback_url`.
-
-```dart
-'microsoft': {
-  'enabled': true,
-  'client_id': 'AZURE_APP_CLIENT_ID',
-  'tenant': 'common',            // or your directory tenant ID
-  'callback_scheme': 'myapp',
-  'web_callback_url': 'https://myapp.com/auth/callback',
-},
-```
-
-### GitHub (`github`)
-
-Uses OAuth browser flow via `flutter_web_auth_2 ^4.x`. Like Microsoft, GitHub returns only an authorization code; the backend exchanges it for an access token using the GitHub token endpoint.
-
-Config keys: `client_id` (required), `scopes`, `callback_scheme`, `web_callback_url`.
-
-```dart
-'github': {
-  'enabled': true,
-  'client_id': 'GITHUB_OAUTH_APP_CLIENT_ID',
-  'scopes': ['read:user', 'user:email'],
-  'callback_scheme': 'myapp',
-},
-```
+Any provider through the backend's browser flow: GitHub and Microsoft everywhere, Apple on Android and the web, Google on the web. The app mints a PKCE pair, opens `<base_url>/auth/social/{provider}/redirect`, receives a one-time code on the callback and trades it with the verifier at `auth/social/exchange`. See [Flows](flows.md#browser-flow).
 
 ---
 
 ## <a name="platform-support-matrix"></a>Platform Support Matrix
 
-| Driver | iOS | Android | Web | macOS | Windows | Linux |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Google | Yes | Yes | Yes | — | — | — |
-| Microsoft | Yes | Yes | Yes | Yes | Yes | — |
-| GitHub | Yes | Yes | Yes | Yes | Yes | Yes |
+| Provider | iOS | Android | Web |
+|---|---|---|---|
+| Google | native SDK | native SDK | browser flow (popup) |
+| Apple | native sheet | browser flow | browser flow (popup) |
+| GitHub | browser flow | browser flow | browser flow (popup) |
+| Microsoft | browser flow | browser flow | browser flow (popup) |
 
-> [!NOTE]
-> `SocialAuth.supports('google')` returns `false` on macOS, Windows, and Linux at runtime. `SocialAuthButtons` uses this check to omit unsupported providers automatically.
+macOS, Windows and Linux are not supported: `SocialAuth.supports(name)` answers `false` there, and `SocialAuthButtons` omits the provider.
 
 ---
 
 ## <a name="registering-a-custom-driver"></a>Registering a Custom Driver
 
-Implement `SocialDriver`, then register via `SocialAuth.manager.extend()`. Optionally register UI metadata so `SocialAuthButtons` can render your provider.
+The backend serves Google, Apple, GitHub and Microsoft. A custom driver is for a provider your own backend adds, or for a different way of running one of these. Extend `SocialDriver`, or reuse `RedirectDriver` for a provider the backend hosts a browser flow for:
 
 ```dart
-import 'package:magic_social_auth/magic_social_auth.dart';
-
-class AppleDriver extends SocialDriver {
-  AppleDriver(super.config);
-
-  @override
-  String get name => 'apple';
-
-  @override
-  Set<SocialPlatform> get supportedPlatforms => {
-    SocialPlatform.ios,
-    SocialPlatform.macos,
-  };
-
-  @override
-  Future<SocialToken> getToken() async {
-    // Call Sign in with Apple SDK, return SocialToken
-    final credential = await SignInWithApple.getAppleIDCredential(
-      scopes: [AppleIDAuthorizationScopes.email],
-    );
-    return SocialToken(
-      provider: name,
-      accessToken: credential.authorizationCode,
-      idToken: credential.identityToken,
-      email: credential.email,
-    );
-  }
-}
-```
-
-Register the driver and its UI defaults (for example, in your app's service provider `boot` method):
-
-```dart
-SocialAuth.manager.extend('apple', (config) => AppleDriver(config));
+SocialAuth.manager.extend(
+  'gitlab',
+  (config) => RedirectDriver('gitlab', config),
+);
 
 SocialAuth.manager.registerProviderDefaults(
-  'apple',
-  SocialProviderDefaults(
-    label: 'Apple',
+  'gitlab',
+  const SocialProviderDefaults(
+    label: 'GitLab',
     iconSvg: '<svg>...</svg>',
-    order: 4,
+    order: 5,
   ),
 );
 ```
 
-> [!TIP]
-> Call `extend()` before any call to `SocialAuth.driver('apple')`. The manager clears cached instances when `extend()` is called, so re-registration is safe.
+Call `extend()` before the first `SocialAuth.driver('gitlab')`. It clears a cached instance of that name, so re-registering is safe. A custom driver is resolved after the `enabled` check, so `social_auth.providers.gitlab.enabled: false` still disables it.
 
 ---
 
 **Related**
 
-- [Installation](https://magic.fluttersdk.com/packages/social-auth/getting-started/installation)
-- [Configuration](https://magic.fluttersdk.com/packages/social-auth/getting-started/configuration)
-- [Handlers](https://magic.fluttersdk.com/packages/social-auth/basics/handlers)
-- [Architecture overview](https://magic.fluttersdk.com/packages/social-auth/architecture/overview)
+- [Installation](../getting-started/installation.md)
+- [Configuration](../getting-started/configuration.md)
+- [Flows](flows.md)
+- [Architecture overview](../architecture/overview.md)

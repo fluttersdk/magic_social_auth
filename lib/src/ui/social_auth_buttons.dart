@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../facades/social_auth.dart';
+import '../models/social_platform.dart';
 import 'social_provider_icons.dart';
 
 /// Social auth mode — determines button label text.
@@ -11,17 +12,22 @@ enum SocialAuthMode { signIn, signUp }
 ///
 /// Reads `social_auth.providers` from config, filters by
 /// `enabled` flag and platform support, then renders a button
-/// per provider with the correct icon and label.
+/// per provider with the correct icon and label. On iOS, Apple comes first
+/// whatever the configured order, as Apple's review guidelines expect.
 ///
 /// ```dart
 /// SocialAuthButtons(
-///   onAuthenticate: (provider) => controller.doSocialLogin(provider),
-///   loadingProvider: controller.socialLoginProvider,
+///   // No await before signIn(): a web popup must open in the tap's own run.
+///   onPressed: (provider) => SocialAuth.driver(
+///     provider,
+///   ).signIn().then(onSignedIn, onError: onFailed),
+///   loadingProvider: signingInWith,
 /// )
 /// ```
 class SocialAuthButtons extends StatelessWidget {
-  /// Called when user taps a provider button.
-  final Future<void> Function(String provider) onAuthenticate;
+  /// Called synchronously from the tap, so a web sign-in started here can
+  /// still open its popup.
+  final void Function(String provider) onPressed;
 
   /// Currently loading provider name (for per-button loading state).
   /// Pass empty string to disable all buttons without showing any spinner.
@@ -41,7 +47,7 @@ class SocialAuthButtons extends StatelessWidget {
 
   const SocialAuthButtons({
     super.key,
-    required this.onAuthenticate,
+    required this.onPressed,
     this.loadingProvider,
     this.mode = SocialAuthMode.signIn,
     this.className,
@@ -63,8 +69,9 @@ class SocialAuthButtons extends StatelessWidget {
 
   /// Get enabled and platform-supported providers from config.
   List<_ResolvedProvider> _getEnabledProviders() {
-    final providersConfig =
-        Config.get<Map<String, dynamic>>('social_auth.providers');
+    final providersConfig = Config.get<Map<String, dynamic>>(
+      'social_auth.providers',
+    );
     if (providersConfig == null) return [];
 
     final resolved = <_ResolvedProvider>[];
@@ -92,19 +99,29 @@ class SocialAuthButtons extends StatelessWidget {
       final order =
           config['order'] as int? ?? defaults?.order ?? (100 + insertionIndex);
 
-      resolved.add(_ResolvedProvider(
-        name: name,
-        label: label,
-        iconSvg: iconSvg,
-        iconClassName: iconClassName,
-        order: order,
-      ));
+      resolved.add(
+        _ResolvedProvider(
+          name: name,
+          label: label,
+          iconSvg: iconSvg,
+          iconClassName: iconClassName,
+          order: order,
+        ),
+      );
 
       insertionIndex++;
     }
 
-    // Sort by order
-    resolved.sort((a, b) => a.order.compareTo(b.order));
+    // Sort by order, Apple first on iOS
+    final bool appleFirst = SocialAuth.manager.platform == SocialPlatform.ios;
+    int rank(_ResolvedProvider provider) =>
+        appleFirst && provider.name == 'apple' ? -1 : 0;
+
+    resolved.sort(
+      (a, b) => rank(a) != rank(b)
+          ? rank(a).compareTo(rank(b))
+          : a.order.compareTo(b.order),
+    );
     return resolved;
   }
 
@@ -127,13 +144,14 @@ class SocialAuthButtons extends StatelessWidget {
     final label = labelBuilder != null
         ? labelBuilder!(provider.label, mode)
         : mode == SocialAuthMode.signIn
-            ? trans('auth.sign_in_with', {'provider': provider.label})
-            : trans('auth.sign_up_with', {'provider': provider.label});
+        ? trans('auth.sign_in_with', {'provider': provider.label})
+        : trans('auth.sign_up_with', {'provider': provider.label});
 
     return WButton(
-      onTap: isDisabled ? null : () => onAuthenticate(provider.name),
+      onTap: isDisabled ? null : () => onPressed(provider.name),
       isLoading: isThisLoading,
-      className: buttonClassName ??
+      className:
+          buttonClassName ??
           '''
         w-full p-3 rounded-xl
         bg-white dark:bg-slate-800

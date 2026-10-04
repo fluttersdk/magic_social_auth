@@ -6,10 +6,12 @@
 # lib/config/app.dart's providers list so the Magic IoC container resolves
 # the runtime SocialAuth facade.
 #
-# No stub files are published: provider OAuth client credentials are
-# scaffolded on demand by `dart run artisan social:install` (writes
-# lib/config/social_auth.dart with Google / Apple / GitHub entries gated
-# on the user's --providers selection).
+# Everything else depends on the flags of `social:install` and on what the
+# project holds, so the command stages it on top of this manifest (see
+# SocialInstallCommand): lib/config/social_auth.dart and its config factory, the
+# iOS Google keys, URL scheme and Sign in with Apple entitlement, the Android
+# callback activity, web/auth.html, and the magic_starter bridge when the app
+# lists magic_starter.
 #
 # See doc/install_yaml_schema.md (in fluttersdk_artisan) for the full schema.
 
@@ -22,28 +24,16 @@ magic:
 
 post_install:
   message: |
-    magic_social_auth plugin:installed. Bootstrap workflow:
+    magic_social_auth installed. Next:
 
-    1. Verify the IoC wiring (auto-injected by `magic:install`):
+    1. Fill in lib/config/social_auth.dart wherever a value is still empty
+       (the Google client ids, the iOS and Android callbacks). Re-running
+       social:install with the flags writes them for you.
 
-         lib/config/app.dart:
-           providers: [
-             ...,
-             (app) => SocialAuthServiceProvider(app),
-           ],
+    2. Check the native setup and print the values the backend needs:
 
-    2. Scaffold the OAuth provider config (Google / Apple / GitHub):
+         dart run <app>:artisan social:doctor
 
-         dart run artisan social:install --providers=google,apple
-         # writes lib/config/social_auth.dart with the selected provider entries
-         # + magic_starter LoginScreen integration (social buttons row).
-
-    3. Configure each provider's client credentials in your .env:
-
-         GOOGLE_CLIENT_ID=...
-         APPLE_SERVICE_ID=...
-         GITHUB_CLIENT_ID=...
-
-    4. Verify the CLI surface:
-
-         dart run artisan list   # includes social:install
+    3. Set those values in the magic-starter-laravel .env, and register
+       https://<api host>/magic-starter/social/{provider}/callback in each
+       provider console.

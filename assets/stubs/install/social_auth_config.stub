@@ -1,0 +1,28 @@
+// What `dart run <app>:artisan social:doctor` checks, and the values it prints
+// for the backend: the callbacks below must equal the backend's
+// MAGIC_STARTER_SOCIAL_IOS_REDIRECT and MAGIC_STARTER_SOCIAL_ANDROID_REDIRECT.
+Map<String, dynamic> get socialAuthConfig => {
+  'social_auth': {
+    'providers': {
+      'google': {
+        'enabled': {{ google_enabled }},
+        'ios_client_id': '{{ google_ios_client_id }}',
+        'server_client_id': '{{ google_server_client_id }}',
+      },
+      'apple': {
+        'enabled': {{ apple_enabled }},
+      },
+      'github': {
+        'enabled': {{ github_enabled }},
+      },
+      'microsoft': {
+        'enabled': {{ microsoft_enabled }},
+      },
+    },
+
+    'callback': {
+      'ios': '{{ ios_callback }}',
+      'android': '{{ android_callback }}',
+    },
+  },
+};

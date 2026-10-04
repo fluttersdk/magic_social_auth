@@ -1,153 +1,168 @@
 # Configuration
 
-The `social_auth` config file controls which providers are active, their OAuth credentials, platform-specific behavior, and UI rendering options for the `SocialAuthButtons` widget.
+The `social_auth` config decides which providers are on, which Google client ids the native SDK uses, and where the browser flow returns to on each platform. `social:install` writes it to `lib/config/social_auth.dart`; every value is read at runtime through `Config.get`.
 
 ## Table of Contents
 
 - [Full Config Structure](#full-config-structure)
-- [Top-level Keys](#top-level-keys)
-- [Provider Options](#provider-options)
-- [Provider-specific Options](#provider-specific-options)
+- [Providers](#providers)
+- [Callbacks](#callbacks)
 - [UI Overrides](#ui-overrides)
+- [Keys Owned by Other Packages](#keys-owned-by-other-packages)
 - [Minimal Example](#minimal-example)
+- [Removed Keys](#removed-keys)
 
 ---
 
 ## <a name="full-config-structure"></a>Full Config Structure
 
-```dart
-Map<String, dynamic> socialAuthConfig() => {
-  // Backend endpoint. {provider} is replaced at runtime.
-  'endpoint': '/auth/social/{provider}',
+This is what `social:install --providers=google,apple,github,microsoft --google-ios-client-id=123-abc.apps.googleusercontent.com --google-server-client-id=123-def.apps.googleusercontent.com --ios-scheme=myapp --android-callback=https://auth.example.com/auth/social` writes:
 
-  'providers': {
-    'google': {
-      'enabled': true,
-      'client_id': 'YOUR_CLIENT_ID.apps.googleusercontent.com',
-      'server_client_id': 'YOUR_SERVER_CLIENT_ID.apps.googleusercontent.com',
-      'scopes': ['email', 'profile'],
-      // UI
-      'label': 'Google',
-      'order': 1,
+```dart
+// What `dart run <app>:artisan social:doctor` checks, and the values it prints
+// for the backend: the callbacks below must equal the backend's
+// MAGIC_STARTER_SOCIAL_IOS_REDIRECT and MAGIC_STARTER_SOCIAL_ANDROID_REDIRECT.
+Map<String, dynamic> get socialAuthConfig => {
+  'social_auth': {
+    'providers': {
+      'google': {
+        'enabled': true,
+        'ios_client_id': '123-abc.apps.googleusercontent.com',
+        'server_client_id': '123-def.apps.googleusercontent.com',
+      },
+      'apple': {
+        'enabled': true,
+      },
+      'github': {
+        'enabled': true,
+      },
+      'microsoft': {
+        'enabled': true,
+      },
     },
-    'microsoft': {
-      'enabled': true,
-      'client_id': 'YOUR_AZURE_APP_CLIENT_ID',
-      'tenant': 'common',
-      'scopes': ['openid', 'profile', 'email'],
-      'callback_scheme': 'myapp',
-      'web_callback_url': 'https://myapp.com/auth/callback',
-      // UI
-      'label': 'Microsoft',
-      'order': 2,
-    },
-    'github': {
-      'enabled': true,
-      'client_id': 'YOUR_GITHUB_CLIENT_ID',
-      'scopes': ['read:user', 'user:email'],
-      'callback_scheme': 'myapp',
-      'web_callback_url': 'https://myapp.com/auth/callback',
-      // UI
-      'label': 'GitHub',
-      'order': 3,
+
+    'callback': {
+      'ios': 'myapp://auth/social',
+      'android': 'https://auth.example.com/auth/social',
     },
   },
 };
 ```
 
+`social:doctor` reads this file back with a textual scan, so keep provider entries and `callback` flat maps of string and bool literals.
+
 ---
 
-## <a name="top-level-keys"></a>Top-level Keys
+## <a name="providers"></a>Providers
+
+`social_auth.providers.<name>` for `google`, `apple`, `github` and `microsoft`.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `endpoint` | `String` | `/auth/social/{provider}` | Backend URL. `{provider}` is replaced by driver name at runtime (e.g., `/auth/social/google`). Used by the default `HttpSocialAuthHandler`. |
-
----
-
-## <a name="provider-options"></a>Provider Options
-
-These keys apply to every provider:
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | `bool` | `true` | When `false`, the provider is skipped by `SocialAuthButtons` and throws `ProviderNotConfiguredException` if resolved via `SocialAuth.driver()`. |
-| `client_id` | `String` | — | OAuth client ID. Required for Microsoft and GitHub; optional for Google on Android (read from `google-services.json`). |
-| `scopes` | `List<String>` | driver default | OAuth scopes to request. |
-| `callback_scheme` | `String` | `uptizm` | URL scheme for the OAuth redirect on mobile. Must match the scheme registered in `AndroidManifest.xml` / `Info.plist`. Used by Microsoft and GitHub drivers. |
-| `web_callback_url` | `String` | `http://localhost:8080/auth/callback` | Full redirect URL for the web platform. Used by Microsoft and GitHub drivers. |
-
----
-
-## <a name="provider-specific-options"></a>Provider-specific Options
+| `enabled` | `bool` | `true` | When `false`, `SocialAuthButtons` skips the provider and `SocialAuth.driver(name)` throws `ProviderNotConfiguredException`. |
 
 ### Google
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `server_client_id` | `String` | — | Server-side OAuth client ID. Used on mobile to request an ID token for backend verification. Ignored on web. |
+| `ios_client_id` | `String` | none | The Google iOS OAuth client id. Read on iOS only (Android reads its client from the signing key). It must also be in `Info.plist` as `GIDClientID`; `social:install` writes both. |
+| `server_client_id` | `String` | none | The Google web OAuth client id. It is the audience of the ID token the backend verifies, so it must be in `MAGIC_STARTER_SOCIAL_GOOGLE_AUDIENCES`. Without it Google returns no ID token and the driver throws a `SocialAuthException` that names this key. |
 
-### Microsoft
+### Apple, GitHub, Microsoft
 
-| Key | Type | Default | Description |
+No keys beyond `enabled`. Their client ids and secrets live in the backend: the app only opens the sheet (Apple on iOS) or the backend's browser flow (everything else).
+
+---
+
+## <a name="callbacks"></a>Callbacks
+
+`social_auth.callback.<platform>` is where the backend sends the browser when a browser flow ends. It must equal the backend's redirect target for the same platform.
+
+| Key | Type | Backend env | Description |
 |---|---|---|---|
-| `tenant` | `String` | `common` | Azure AD tenant. Use `common` for multi-tenant apps, or your directory tenant ID for single-tenant apps. |
+| `callback.ios` | `String` | `MAGIC_STARTER_SOCIAL_IOS_REDIRECT` | A custom scheme URL: `myapp://auth/social`. The scheme is what the app listens on. An https callback would need iOS 17.4. |
+| `callback.android` | `String` | `MAGIC_STARTER_SOCIAL_ANDROID_REDIRECT` | An https App Link: `https://auth.example.com/auth/social`. Its host and path become the Auth Tab's `httpsHost` and `httpsPath`, and the `CallbackActivity` intent filter. Use a dedicated host that no other App Link filter in the app claims. |
 
-### GitHub
+There is no web key: the web flow lands on the app's own `/auth.html` (the backend's `MAGIC_STARTER_SOCIAL_WEB_REDIRECT`).
 
-No provider-specific options beyond the common set.
+A flow that needs a callback which is empty throws a `SocialAuthException` that names the key (`Set social_auth.callback.ios to the URL the backend redirects ios to.`). A callback is needed by GitHub and Microsoft on iOS and Android, and by Apple on Android. Google and Apple on iOS use native sheets, Google on Android does too, and the web needs no callback key.
 
 ---
 
 ## <a name="ui-overrides"></a>UI Overrides
 
-These keys are read by `SocialAuthButtons` to customise the rendered button. When omitted, the widget falls back to built-in defaults (icon SVG, label, order).
+Read by `SocialAuthButtons` from each provider's entry. When omitted, the widget falls back to the built-in defaults.
 
 | Key | Type | Description |
 |---|---|---|
-| `label` | `String` | Display name shown on the button (e.g., `'Sign in with Google'`). |
-| `icon_svg` | `String` | Raw SVG string rendered as the button icon. Overrides the built-in icon. |
-| `icon_class` | `String` | CSS/Tailwind class applied to the icon element. Defaults to `'w-5 h-5'`. |
-| `order` | `int` | Rendering order. Lower values appear first. Defaults to insertion order. |
+| `label` | `String` | Name shown on the button (`Google` becomes `Sign in with Google` through `auth.sign_in_with`). |
+| `icon_svg` | `String` | Raw SVG string for the icon. Overrides the built-in one. |
+| `icon_class` | `String` | Class applied to the icon element. Defaults to `w-5 h-5`. |
+| `order` | `int` | Rendering order, lower first. Built-in order is Google 1, Microsoft 2, GitHub 3, Apple 4. On iOS Apple is always first, as Apple's review guidelines expect. |
 
 > [!TIP]
-> For custom providers registered via `SocialAuth.manager.extend()`, call `SocialAuth.manager.registerProviderDefaults()` instead of config-level UI overrides so the defaults are always available regardless of config state.
+> For a custom provider registered with `SocialAuth.manager.extend()`, call `SocialAuth.manager.registerProviderDefaults()` instead of per-config overrides, so the defaults are available regardless of config state.
+
+---
+
+## <a name="keys-owned-by-other-packages"></a>Keys Owned by Other Packages
+
+| Key | Owner | Used for |
+|---|---|---|
+| `network.drivers.api.base_url` | magic | The backend base URL. The browser flow starts at `<base_url>/auth/social/{provider}/redirect`, and the native and exchange calls go through the same `Http` facade, so the auth interceptor attaches the bearer a connect or confirm needs. |
+| `auth.sign_in_with`, `auth.sign_up_with` | translations | Button labels. |
 
 ---
 
 ## <a name="minimal-example"></a>Minimal Example
 
-Google-only setup with default scopes and no UI customisation:
+Google and GitHub only, no Apple, no Android browser flow:
 
 ```dart
-Map<String, dynamic> socialAuthConfig() => {
-  'endpoint': '/auth/social/{provider}',
-  'providers': {
-    'google': {
-      'enabled': true,
-      'server_client_id': 'YOUR_SERVER_CLIENT_ID.apps.googleusercontent.com',
+Map<String, dynamic> get socialAuthConfig => {
+  'social_auth': {
+    'providers': {
+      'google': {
+        'enabled': true,
+        'ios_client_id': '123-abc.apps.googleusercontent.com',
+        'server_client_id': '123-def.apps.googleusercontent.com',
+      },
+      'github': {
+        'enabled': true,
+      },
+    },
+    'callback': {
+      'ios': 'myapp://auth/social',
+      'android': '',
     },
   },
 };
 ```
 
-Register via `Magic.init`:
+Register it in `Magic.init`:
 
 ```dart
 await Magic.init(
-  config: {
-    'social_auth': socialAuthConfig(),
-  },
-  providers: [
-    (app) => SocialAuthServiceProvider(app),
+  configFactories: [
+    () => appConfig,
+    () => socialAuthConfig,
   ],
 );
 ```
+
+> [!NOTE]
+> `social:doctor` fails an empty `callback.android` on an Android project as soon as GitHub is enabled, because GitHub signs in through the browser flow there.
+
+---
+
+## <a name="removed-keys"></a>Removed Keys
+
+0.0.8 removed the top-level `social_auth.endpoint` and, per provider, `client_id`, `scopes`, `tenant`, and the keys that named a mobile URL scheme and a web callback URL for the old OAuth flow. The backend now owns scopes, tenants and client ids, and the callbacks are the two `callback.*` keys above. Delete the old keys from your config; they are read nowhere.
 
 ---
 
 **Related**
 
-- [Installation](https://magic.fluttersdk.com/packages/social-auth/getting-started/installation)
-- [Drivers](https://magic.fluttersdk.com/packages/social-auth/basics/drivers)
-- [Handlers](https://magic.fluttersdk.com/packages/social-auth/basics/handlers)
+- [Installation](installation.md)
+- [Drivers](../basics/drivers.md)
+- [Flows](../basics/flows.md)

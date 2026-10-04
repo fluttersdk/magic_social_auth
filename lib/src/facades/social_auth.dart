@@ -8,17 +8,13 @@ import '../contracts/social_driver.dart';
 /// Laravel Socialite-style API.
 ///
 /// ```dart
-/// // Get driver
-/// final driver = SocialAuth.driver('google');
-/// await driver.authenticate();
+/// final SocialAuthResult result = await SocialAuth.driver('google').signIn();
 ///
-/// // Check platform support
 /// if (SocialAuth.supports('apple')) {
-///   await SocialAuth.driver('apple').authenticate();
+///   // Show Sign in with Apple
 /// }
 ///
-/// // Custom driver
-/// SocialAuth.manager.extend('linkedin', (config) => LinkedInDriver(config));
+/// SocialAuth.manager.extend('gitlab', (config) => RedirectDriver('gitlab', config));
 /// ```
 class SocialAuth {
   SocialAuth._();
@@ -30,7 +26,7 @@ class SocialAuth {
   /// Get a driver by name.
   ///
   /// ```dart
-  /// await SocialAuth.driver('google').authenticate();
+  /// await SocialAuth.driver('google').signIn();
   /// ```
   static SocialDriver driver(String name) => manager.driver(name);
 

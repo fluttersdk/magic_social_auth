@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-10-05
+
+Requires `magic-starter-laravel` with its redesigned social login (`auth/social/{provider}/redirect`, `auth/social/exchange`, `auth/social/{provider}/token`, `user/social-accounts/link-ticket`).
+
+### Added
+
+- **Sign in with Apple, native on iOS.** `AppleDriver` opens the system sheet with the lowercase sha256 hex of a fresh nonce, then posts the identity token, the raw nonce and the authorization code to `auth/social/apple/token`. The nonce is new per sheet; the backend refuses one it has seen. The result is an `AppleSignInResult`, which carries the `givenName` and `familyName` Apple shares on the first authorization only. Apple on Android and the web goes through the browser flow. (`lib/src/drivers/apple_driver.dart`, `lib/src/flow/nonce.dart`)
+- **A backend-hosted browser flow with PKCE for GitHub, Microsoft, Apple on Android and web, and Google on the web.** `RedirectDriver` mints a `Pkce` pair (64-character verifier, 43-character S256 challenge), opens `<network.drivers.api.base_url>/auth/social/{provider}/redirect?platform=&challenge=` through `flutter_web_auth_2`, takes the one-time code from the callback and trades it with the verifier at `auth/social/exchange`. iOS returns through a custom scheme, Android through an https App Link (Auth Tab with `httpsHost` and `httpsPath`), the web through a popup and `web/auth.html`. A refusal arrives as `SocialAuthException` with the backend's `code`. `preferEphemeral` is never set on Android. (`lib/src/drivers/redirect_driver.dart`, `lib/src/flow/social_flow.dart`, `lib/src/flow/pkce.dart`, `lib/src/flow/web_flow_slot.dart`)
+- **`signIn`, `beginConnect`, `connect` and `confirm` on every driver, all answering a `SocialAuthResult`.** `connect(proof)` links a provider to the signed-in account; `proof` is the step-up field the account can give (`password`, `code` or `confirmation_token`) and `null` for a guest. `beginConnect(proof)` does the link-ticket request first and returns the call that opens the provider, so a web popup can open from a fresh tap. `confirm()` re-authenticates with a linked provider and returns a `confirmationToken`. `SocialAuthResult` exposes the token and user, the 2FA challenge (`isTwoFactor`, `twoFactorToken`), `deletionCancelled`, `connectedProvider` and `confirmationToken`. Every retry mints a new PKCE pair, link ticket and proof. (`lib/src/contracts/social_driver.dart`, `lib/src/models/social_auth_result.dart`)
+- **`social:install` writes the whole setup.** Flags: `--providers`, `--google-ios-client-id`, `--google-server-client-id`, `--ios-scheme`, `--android-callback`, plus the inherited `--force`, `--dry-run`, `--non-interactive` and `--no-bootstrap`. It publishes `lib/config/social_auth.dart` and registers its factory, adds `GIDClientID`, `GIDServerClientID` and the reversed client id URL scheme to `Info.plist`, writes the Sign in with Apple entitlement into every entitlements file the app target signs with, declares the `CallbackActivity` with an `autoVerify` https intent filter, writes `web/auth.html`, and, when the app lists `magic_starter`, publishes the starter bridge and registers it. Needs `fluttersdk_artisan` 0.0.18. (`lib/src/cli/commands/social_install_command.dart`, `install.yaml`, `assets/stubs/install/`)
+- **`social:doctor` checks the setup and prints the backend env.** It verifies the config, the iOS keys, URL scheme and Apple entitlement in every signing file, the Android callback activity (`exported`, `taskAffinity`, `autoVerify` filter) and any other App Link filter that overlaps the callback, `web/auth.html`, and the starter bridge, warns when an iOS app offers a provider but not Apple (App Store guideline 4.8), and prints the `MAGIC_STARTER_SOCIAL_*` and `MAGIC_STARTER_APPLE_*` lines and the callback URL each provider console has to list. (`lib/src/cli/commands/social_doctor_command.dart`)
+- **`SocialAuthException.code` and `statusCode`, and `SocialAuthCancelledException.superseded`.** A backend refusal is read by `code`, never by message. `superseded` is true when another flow took the browser, so the caller stays quiet. (`lib/src/exceptions/social_auth_exception.dart`)
+- **An Apple icon and label in `SocialAuthButtons`, Apple first on iOS.** (`lib/src/ui/social_provider_icons.dart`, `lib/src/ui/social_auth_buttons.dart`)
+
+### Changed
+
+- **BREAKING: the package no longer creates a session.** Drivers answer a `SocialAuthResult`; the caller (or the magic_starter bridge) runs `Auth.login`, finishes a 2FA challenge and handles `deletionCancelled`. `SocialAuthButtons` takes a synchronous `onPressed(provider)` in place of `onAuthenticate`, so a web popup opens from the tap itself. (`lib/src/social_auth_manager.dart`, `lib/src/ui/social_auth_buttons.dart`)
+- **BREAKING: Google is native on iOS and Android only, and posts its ID token to the backend.** The web signs in with Google through the browser flow. No nonce is sent for Google. The SDK is initialized once per process and signed out through `signOut()`. (`lib/src/drivers/google_driver.dart`)
+- **BREAKING: config.** `social_auth.callback.ios` and `social_auth.callback.android` are new and must equal the backend's `MAGIC_STARTER_SOCIAL_IOS_REDIRECT` and `MAGIC_STARTER_SOCIAL_ANDROID_REDIRECT`. `providers.google.ios_client_id` replaces `client_id`. (`assets/stubs/install/social_auth_config.stub`)
+- **BREAKING: Dart `^3.12.0`, Flutter `>=3.44.0`** (from `sign_in_with_apple` 8.2), `flutter_web_auth_2 ^5.1.0`, and `fluttersdk_artisan ^0.0.18`. New dependencies: `sign_in_with_apple ^8.2.0`, `crypto ^3.0.7`. (`pubspec.yaml`)
+- **The documentation is rewritten for the new flows**, and `doc/basics/handlers.md` is replaced by `doc/basics/flows.md`. An app without `magic_starter` has to sign Google out on its own sign-out; the bridge does it for starter apps. (`README.md`, `doc/`, `CLAUDE.md`)
+
+### Removed
+
+- **BREAKING: `SocialToken`, `SocialAuthHandler`, `HttpSocialAuthHandler` and `SocialAuth.manager.setHandler()`.** The handler posted a provider token to `auth/social/{provider}`, which the backend has removed. (`lib/src/models/social_token.dart`, `lib/src/contracts/social_auth_handler.dart`)
+- **BREAKING: `MicrosoftDriver` and `GithubDriver`.** Both providers are a `RedirectDriver` now. `getToken()` and `authenticate()` are gone from `SocialDriver`.
+- **BREAKING: the config keys `endpoint`, `providers.*.client_id`, `scopes`, `tenant`, `callback_scheme` and `web_callback_url`.** The backend owns scopes, tenants and client secrets.
+
 ## [0.0.7] - 2026-09-29
 
 ### Changed

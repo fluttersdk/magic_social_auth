@@ -6,18 +6,23 @@ export 'src/social_auth_manager.dart';
 
 // Contracts
 export 'src/contracts/social_driver.dart';
-export 'src/contracts/social_auth_handler.dart';
 
 // Drivers
+export 'src/drivers/apple_driver.dart';
 export 'src/drivers/google_driver.dart';
-export 'src/drivers/microsoft_driver.dart';
-export 'src/drivers/github_driver.dart';
+export 'src/drivers/redirect_driver.dart';
+
+// Flow
+export 'src/flow/nonce.dart';
+export 'src/flow/pkce.dart';
+export 'src/flow/social_flow.dart';
+export 'src/flow/web_flow_slot.dart';
 
 // Providers
 export 'src/providers/social_auth_service_provider.dart';
 
 // Models
-export 'src/models/social_token.dart';
+export 'src/models/social_auth_result.dart';
 export 'src/models/social_platform.dart';
 
 // Exceptions

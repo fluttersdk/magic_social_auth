@@ -1,46 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:magic/magic.dart';
-import 'package:magic_social_auth/src/social_auth_manager.dart';
 import 'package:magic_social_auth/src/contracts/social_driver.dart';
-import 'package:magic_social_auth/src/models/social_token.dart';
+import 'package:magic_social_auth/src/models/social_auth_result.dart';
 import 'package:magic_social_auth/src/models/social_platform.dart';
+import 'package:magic_social_auth/src/social_auth_manager.dart';
 import 'package:magic_social_auth/src/ui/social_auth_buttons.dart';
 import 'package:magic_social_auth/src/ui/social_provider_icons.dart';
 
-/// Mock driver for testing
+/// A driver that never runs a flow; only its platform support matters here.
 class MockDriver extends SocialDriver {
-  final bool _supportsPlatform;
+  MockDriver(super.config, {this.supportsEveryPlatform = true});
 
-  MockDriver(super.config, {bool supportsPlatform = true})
-      : _supportsPlatform = supportsPlatform;
+  final bool supportsEveryPlatform;
 
   @override
   String get name => config['provider_name'] as String? ?? 'mock';
 
   @override
-  Set<SocialPlatform> get supportedPlatforms {
-    if (!_supportsPlatform) return {};
-    return {
-      SocialPlatform.ios,
-      SocialPlatform.android,
-      SocialPlatform.web,
-      SocialPlatform.macos,
-      SocialPlatform.windows,
-      SocialPlatform.linux,
-    };
+  Set<SocialPlatform> get supportedPlatforms =>
+      supportsEveryPlatform ? SocialPlatform.values.toSet() : {};
+
+  @override
+  Future<SocialAuthResult> signIn() async => const SocialAuthResult();
+
+  @override
+  Future<Future<SocialAuthResult> Function()> beginConnect(
+    Map<String, String>? proof,
+  ) async {
+    return () async => const SocialAuthResult();
   }
 
   @override
-  Future<SocialToken> getToken() async {
-    return const SocialToken(
-      provider: 'mock',
-      accessToken: 'mock_token',
-    );
-  }
-
-  @override
-  Future<void> signOut() async {}
+  Future<SocialAuthResult> confirm() async => const SocialAuthResult();
 }
 
 /// Helper to wrap widget in MaterialApp with WindTheme
@@ -65,29 +57,82 @@ void main() {
 
     // Register mock drivers
     manager.extend('google', (config) => MockDriver(config));
+    manager.extend('apple', (config) => MockDriver(config));
     manager.extend('microsoft', (config) => MockDriver(config));
     manager.extend('github', (config) => MockDriver(config));
     manager.extend(
-        'unsupported', (config) => MockDriver(config, supportsPlatform: false));
+      'unsupported',
+      (config) => MockDriver(config, supportsEveryPlatform: false),
+    );
+  });
+
+  tearDown(() => SocialAuthManager().platformOverride = null);
+
+  group('Apple placement', () {
+    List<String?> labels(WidgetTester tester) => [
+      for (final WText text in tester.widgetList<WText>(find.byType(WText)))
+        text.data,
+    ];
+
+    Future<void> pump(WidgetTester tester) {
+      return tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            labelBuilder: (label, _) => label,
+          ),
+        ),
+      );
+    }
+
+    testWidgets('comes first on iOS, ahead of any configured order', (
+      tester,
+    ) async {
+      SocialAuthManager().platformOverride = SocialPlatform.ios;
+      Config.set('social_auth.providers', {
+        'google': {'order': 0},
+        'github': {'enabled': true},
+        'apple': {'enabled': true},
+      });
+
+      await pump(tester);
+
+      expect(labels(tester), ['Apple', 'Google', 'GitHub']);
+    });
+
+    testWidgets('keeps its built-in order elsewhere', (tester) async {
+      SocialAuthManager().platformOverride = SocialPlatform.android;
+      Config.set('social_auth.providers', {
+        'apple': {'enabled': true},
+        'github': {'enabled': true},
+        'google': {'enabled': true},
+      });
+
+      await pump(tester);
+
+      expect(labels(tester), ['Google', 'GitHub', 'Apple']);
+    });
   });
 
   group('SocialAuthButtons', () {
-    testWidgets('renders nothing when providers config is empty',
-        (tester) async {
+    testWidgets('renders nothing when providers config is empty', (
+      tester,
+    ) async {
       Config.set('social_auth.providers', {});
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(onAuthenticate: (_) async {}),
-      ));
+      await tester.pumpWidget(
+        wrapWithTheme(SocialAuthButtons(onPressed: (_) {})),
+      );
 
       expect(find.byType(WButton), findsNothing);
     });
 
-    testWidgets('renders nothing when providers config is null',
-        (tester) async {
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(onAuthenticate: (_) async {}),
-      ));
+    testWidgets('renders nothing when providers config is null', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrapWithTheme(SocialAuthButtons(onPressed: (_) {})),
+      );
 
       expect(find.byType(WButton), findsNothing);
     });
@@ -99,12 +144,14 @@ void main() {
         'github': {'enabled': true},
       });
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (_) async {},
-          labelBuilder: (label, _) => label, // Simplify labels for testing
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            labelBuilder: (label, _) => label, // Simplify labels for testing
+          ),
         ),
-      ));
+      );
 
       expect(find.byType(WButton), findsNWidgets(2));
       expect(find.text('Google'), findsOneWidget);
@@ -118,32 +165,37 @@ void main() {
         'unsupported': {'enabled': true},
       });
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (_) async {},
-          labelBuilder: (label, _) => label,
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            labelBuilder: (label, _) => label,
+          ),
         ),
-      ));
+      );
 
       expect(find.byType(WButton), findsOneWidget);
       expect(find.text('Google'), findsOneWidget);
       expect(find.text('Unsupported'), findsNothing);
     });
 
-    testWidgets('shows loading indicator for matching loadingProvider',
-        (tester) async {
+    testWidgets('shows loading indicator for matching loadingProvider', (
+      tester,
+    ) async {
       Config.set('social_auth.providers', {
         'google': {'enabled': true},
         'github': {'enabled': true},
       });
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (_) async {},
-          loadingProvider: 'google', // Google is loading
-          labelBuilder: (label, _) => label,
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            loadingProvider: 'google', // Google is loading
+            labelBuilder: (label, _) => label,
+          ),
         ),
-      ));
+      );
 
       // We should have 2 buttons
       final buttons = tester.widgetList<WButton>(find.byType(WButton)).toList();
@@ -159,20 +211,23 @@ void main() {
       expect(buttons[1].onTap, isNull); // Disabled
     });
 
-    testWidgets('disables all buttons when loadingProvider is empty string',
-        (tester) async {
+    testWidgets('disables all buttons when loadingProvider is empty string', (
+      tester,
+    ) async {
       Config.set('social_auth.providers', {
         'google': {'enabled': true},
         'github': {'enabled': true},
       });
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (_) async {},
-          loadingProvider: '', // Empty means all disabled, no spinners
-          labelBuilder: (label, _) => label,
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            loadingProvider: '', // Empty means all disabled, no spinners
+            labelBuilder: (label, _) => label,
+          ),
         ),
-      ));
+      );
 
       final buttons = tester.widgetList<WButton>(find.byType(WButton)).toList();
 
@@ -184,18 +239,17 @@ void main() {
 
     testWidgets('config-driven label override works', (tester) async {
       Config.set('social_auth.providers', {
-        'google': {
-          'enabled': true,
-          'label': 'Sign in with Alphabet',
-        },
+        'google': {'enabled': true, 'label': 'Sign in with Alphabet'},
       });
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (_) async {},
-          labelBuilder: (label, _) => label,
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            labelBuilder: (label, _) => label,
+          ),
         ),
-      ));
+      );
 
       expect(find.text('Sign in with Alphabet'), findsOneWidget);
     });
@@ -205,12 +259,14 @@ void main() {
         'google': {'enabled': true},
       });
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (_) async {},
-          labelBuilder: (providerLabel, mode) => 'Custom: $providerLabel',
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            labelBuilder: (providerLabel, mode) => 'Custom: $providerLabel',
+          ),
         ),
-      ));
+      );
 
       expect(find.text('Custom: Google'), findsOneWidget);
     });
@@ -222,12 +278,14 @@ void main() {
         'google': {'enabled': true, 'order': 2}, // Should be second
       });
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (_) async {},
-          labelBuilder: (label, _) => label,
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            labelBuilder: (label, _) => label,
+          ),
         ),
-      ));
+      );
 
       final texts = tester.widgetList<WText>(find.byType(WText)).toList();
       expect(texts[0].data, 'GitHub');
@@ -235,46 +293,49 @@ void main() {
       expect(texts[2].data, 'Microsoft');
     });
 
-    testWidgets('custom provider with icon_svg in config renders',
-        (tester) async {
+    testWidgets('custom provider with icon_svg in config renders', (
+      tester,
+    ) async {
       Config.set('social_auth.providers', {
-        'custom': {
-          'enabled': true,
-          'icon_svg': '<svg><rect/></svg>',
-        },
+        'custom': {'enabled': true, 'icon_svg': '<svg><rect/></svg>'},
       });
 
       // Register mock driver for custom provider so it passes supports()
       final manager = Magic.make<SocialAuthManager>('social_auth');
       manager.extend('custom', (config) => MockDriver(config));
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (_) async {},
-          labelBuilder: (label, _) => label,
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            labelBuilder: (label, _) => label,
+          ),
         ),
-      ));
+      );
 
       expect(find.text('Custom'), findsOneWidget);
       expect(find.byType(WSvg), findsOneWidget);
     });
 
-    testWidgets('onAuthenticate fires with correct provider name on tap',
-        (tester) async {
+    testWidgets('onPressed fires with correct provider name on tap', (
+      tester,
+    ) async {
       Config.set('social_auth.providers', {
         'google': {'enabled': true},
       });
 
       String? tappedProvider;
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (provider) async {
-            tappedProvider = provider;
-          },
-          labelBuilder: (label, _) => label,
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (provider) {
+              tappedProvider = provider;
+            },
+            labelBuilder: (label, _) => label,
+          ),
         ),
-      ));
+      );
 
       await tester.tap(find.byType(WButton));
 
@@ -286,12 +347,14 @@ void main() {
         'google': {'enabled': true},
       });
 
-      await tester.pumpWidget(wrapWithTheme(
-        SocialAuthButtons(
-          onAuthenticate: (_) async {},
-          buttonClassName: 'custom-button-class text-red-500',
+      await tester.pumpWidget(
+        wrapWithTheme(
+          SocialAuthButtons(
+            onPressed: (_) {},
+            buttonClassName: 'custom-button-class text-red-500',
+          ),
         ),
-      ));
+      );
 
       final button = tester.widget<WButton>(find.byType(WButton));
       expect(button.className, 'custom-button-class text-red-500');
