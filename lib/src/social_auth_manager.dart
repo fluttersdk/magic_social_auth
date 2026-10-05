@@ -1,27 +1,25 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:magic/magic.dart';
 
 import 'contracts/social_driver.dart';
-import 'contracts/social_auth_handler.dart';
+import 'drivers/apple_driver.dart';
 import 'drivers/google_driver.dart';
-import 'drivers/microsoft_driver.dart';
-import 'drivers/github_driver.dart';
-import 'models/social_token.dart';
+import 'drivers/redirect_driver.dart';
 import 'exceptions/social_auth_exception.dart';
+import 'models/social_platform.dart';
 import 'ui/social_provider_icons.dart';
 
 /// Manages social authentication drivers.
 ///
-/// Follows the same pattern as Magic's AuthManager.
+/// Follows the same pattern as Magic's AuthManager. Google, Apple, GitHub and
+/// Microsoft resolve out of the box, each to the driver that runs on the
+/// current platform: the native SDK for Google on iOS and Android and for
+/// Apple on iOS, the backend's browser flow everywhere else.
 ///
 /// ```dart
-/// // Get a driver
-/// final driver = SocialAuth.driver('google');
+/// final SocialAuthResult result = await SocialAuth.driver('google').signIn();
 ///
-/// // Register custom driver
-/// SocialAuth.manager.extend('apple', (config) => AppleDriver(config));
-///
-/// // Set custom handler
-/// SocialAuth.manager.setHandler(FirebaseAuthHandler());
+/// SocialAuth.manager.extend('gitlab', (config) => RedirectDriver('gitlab', config));
 /// ```
 class SocialAuthManager {
   /// Singleton instance.
@@ -39,8 +37,14 @@ class SocialAuthManager {
   /// Resolved driver instances.
   final Map<String, SocialDriver> _drivers = {};
 
-  /// Auth handler (customizable).
-  SocialAuthHandler _handler = HttpSocialAuthHandler();
+  /// Forces the platform built-in drivers are resolved for; null reads the
+  /// running one.
+  @visibleForTesting
+  SocialPlatform? platformOverride;
+
+  /// The platform built-in drivers are resolved for.
+  SocialPlatform get platform =>
+      platformOverride ?? SocialPlatformExtension.current;
 
   // ---------------------------------------------------------------------------
   // Driver Methods
@@ -49,8 +53,7 @@ class SocialAuthManager {
   /// Get a driver by name.
   ///
   /// ```dart
-  /// final google = SocialAuth.driver('google');
-  /// await google.authenticate();
+  /// final SocialAuthResult result = await SocialAuth.driver('google').signIn();
   /// ```
   SocialDriver driver(String name) {
     if (_drivers.containsKey(name)) {
@@ -62,7 +65,7 @@ class SocialAuthManager {
   /// Register a custom driver.
   ///
   /// ```dart
-  /// SocialAuth.manager.extend('apple', (config) => AppleDriver(config));
+  /// SocialAuth.manager.extend('gitlab', (config) => RedirectDriver('gitlab', config));
   /// ```
   void extend(
     String name,
@@ -72,20 +75,6 @@ class SocialAuthManager {
     // Clear cached instance if exists
     _drivers.remove(name);
   }
-
-  // ---------------------------------------------------------------------------
-  // Handler Methods
-  // ---------------------------------------------------------------------------
-
-  /// Set custom auth handler.
-  ///
-  /// ```dart
-  /// SocialAuth.manager.setHandler(FirebaseAuthHandler());
-  /// ```
-  void setHandler(SocialAuthHandler handler) => _handler = handler;
-
-  /// Handle authentication (called by drivers).
-  Future<void> handleAuth(SocialToken token) => _handler.handle(token);
 
   // ---------------------------------------------------------------------------
   // User Factory (delegates to Auth)
@@ -119,10 +108,21 @@ class SocialAuthManager {
     }
 
     // Built-in drivers
+    final SocialPlatform platform = this.platform;
+
     return switch (name) {
-      'google' => GoogleDriver(config),
-      'microsoft' => MicrosoftDriver(config),
-      'github' => GithubDriver(config),
+      'google' when platform != SocialPlatform.web => GoogleDriver(
+        config,
+        platform: platform,
+      ),
+      'apple' when platform == SocialPlatform.ios => AppleDriver(
+        config,
+        platform: platform,
+      ),
+      'google' ||
+      'apple' ||
+      'github' ||
+      'microsoft' => RedirectDriver(name, config, platform: platform),
       _ => throw ArgumentError('Unknown social driver: $name'),
     };
   }
@@ -139,8 +139,8 @@ class SocialAuthManager {
   /// [SocialAuthButtons] widget can render the provider automatically.
   ///
   /// ```dart
-  /// SocialAuth.manager.registerProviderDefaults('apple', SocialProviderDefaults(
-  ///   label: 'Apple',
+  /// SocialAuth.manager.registerProviderDefaults('gitlab', SocialProviderDefaults(
+  ///   label: 'GitLab',
   ///   iconSvg: '<svg>...</svg>',
   ///   order: 4,
   /// ));
@@ -159,8 +159,8 @@ class SocialAuthManager {
 
   /// Sign out from all social providers.
   ///
-  /// Calls signOut() on all cached driver instances, then clears the cache.
-  /// This ensures fresh login prompts on next authentication attempt.
+  /// Calls signOut() on all cached driver instances (Google signs its SDK
+  /// out), then clears the cache, so the next sign-in shows a fresh prompt.
   ///
   /// ```dart
   /// await SocialAuth.signOut();

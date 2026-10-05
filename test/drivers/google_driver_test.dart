@@ -3,149 +3,296 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:magic/magic.dart';
 import 'package:magic_social_auth/src/drivers/google_driver.dart';
 import 'package:magic_social_auth/src/exceptions/social_auth_exception.dart';
+import 'package:magic_social_auth/src/models/social_auth_result.dart';
 import 'package:magic_social_auth/src/models/social_platform.dart';
-import 'package:magic_social_auth/src/models/social_token.dart';
 
 void main() {
-  group('GoogleDriver', () {
-    late GoogleDriver driver;
+  late FakeNetworkDriver http;
+  late FakeLogManager log;
 
-    setUp(() {
-      driver = GoogleDriver({
-        'client_id': 'test-client-id',
-        'server_client_id': 'test-server-client-id',
-        'scopes': ['email', 'profile'],
-      });
+  setUp(() {
+    MagicApp.reset();
+    log = Log.fake();
+    GoogleDriver.resetInitialization();
+    _FakeGoogleDriver.initializations.clear();
+    http = Http.fake({
+      '/auth/social/google/token': Http.response({
+        'data': {
+          'user': {'id': 1},
+          'token': '1|abc',
+        },
+      }),
+    });
+  });
+
+  tearDown(MagicApp.reset);
+
+  List<MagicRequest> sent() => [
+    for (final (MagicRequest request, _) in http.recorded) request,
+  ];
+
+  test('runs natively on iOS and Android only', () {
+    final GoogleDriver driver = GoogleDriver(const {});
+
+    expect(driver.name, 'google');
+    expect(driver.supportedPlatforms, {
+      SocialPlatform.ios,
+      SocialPlatform.android,
+    });
+  });
+
+  group('signIn', () {
+    test('posts the ID token with intent signin and no nonce', () async {
+      final _FakeGoogleDriver driver = _FakeGoogleDriver();
+
+      final SocialAuthResult result = await driver.signIn();
+
+      final MagicRequest request = sent().single;
+      expect(request.method, 'POST');
+      expect(request.url, '/auth/social/google/token');
+      expect(request.data, {'id_token': 'google-id-token', 'intent': 'signin'});
+      expect((request.data as Map).containsKey('nonce'), isFalse);
+      expect(result.token, '1|abc');
     });
 
-    test('name returns google', () {
-      expect(driver.name, 'google');
-    });
-
-    test('supports iOS, Android, and Web platforms', () {
-      expect(
-        driver.supportedPlatforms,
-        containsAll([
-          SocialPlatform.ios,
-          SocialPlatform.android,
-          SocialPlatform.web,
-        ]),
-      );
-    });
-
-    test('supportsPlatform returns true for supported platforms', () {
-      expect(driver.supportsPlatform(SocialPlatform.ios), isTrue);
-      expect(driver.supportsPlatform(SocialPlatform.android), isTrue);
-      expect(driver.supportsPlatform(SocialPlatform.web), isTrue);
-    });
-
-    test('config is accessible', () {
-      expect(driver.config['client_id'], 'test-client-id');
-      expect(driver.config['server_client_id'], 'test-server-client-id');
-      expect(driver.config['scopes'], ['email', 'profile']);
-    });
-
-    test('has signOut method', () {
-      // Verify signOut method exists (calling it requires Magic container)
-      expect(driver.signOut, isA<Function>());
-    });
-
-    // -------------------------------------------------------------------------
-    // The error-translation contract
-    //
-    // `getToken`'s try/catch IS the driver's contract: a provider error becomes
-    // SocialAuthException, and a user cancel becomes SocialAuthCancelledException
-    // so a consumer can tell "backed out" from "failed". Nothing reached that
-    // code before, because every path into it goes through the platform channel,
-    // which is why `nativeSignIn` and `supportsNativeSignIn` exist as seams.
-    // -------------------------------------------------------------------------
-
-    setUp(() {
-      // The `catch (e)` clause logs before it throws, and `Log` resolves
-      // `Magic.make<LogManager>('log')`, so without a binding the test sees a
-      // container error instead of the translation it is asserting on. The two
-      // clauses above it (cancel, rethrow) never log, which is why only this
-      // case needed it.
-      MagicApp.reset();
-      MagicApp.instance.singleton('log', LogManager.new);
-    });
-
-    tearDown(MagicApp.reset);
-
-    test('a native failure is translated, not raised raw', () async {
-      // Regression guard for a bare `return nativeSignIn()`: an unawaited
-      // future completes after the try has exited, so the catch clauses never
-      // see the error and the caller gets the raw one.
-      final driver =
-          _FakeGoogleDriver(throwing: StateError('token read blew up'));
-
-      await expectLater(
-        driver.getToken(),
-        throwsA(isA<SocialAuthException>()),
-      );
-    });
-
-    test('a cancel is translated to SocialAuthCancelledException', () async {
-      final driver = _FakeGoogleDriver(
+    test('a canceled sheet becomes SocialAuthCancelledException', () async {
+      final _FakeGoogleDriver driver = _FakeGoogleDriver(
         throwing: const GoogleSignInException(
           code: GoogleSignInExceptionCode.canceled,
-          description: 'user closed the sheet',
         ),
       );
 
       await expectLater(
-        driver.getToken(),
+        driver.signIn(),
         throwsA(isA<SocialAuthCancelledException>()),
       );
+      expect(sent(), isEmpty);
     });
 
-    test('a SocialAuthException from below is rethrown unchanged', () async {
-      final original = const SocialAuthException('already ours');
-      final driver = _FakeGoogleDriver(throwing: original);
+    test(
+      'another SDK failure is coded sdk_error; its detail is logged',
+      () async {
+        final _FakeGoogleDriver driver = _FakeGoogleDriver(
+          throwing: const GoogleSignInException(
+            code: GoogleSignInExceptionCode.clientConfigurationError,
+            description: 'serverClientId missing',
+          ),
+        );
+
+        await expectLater(
+          driver.signIn(),
+          throwsA(
+            isA<SocialAuthException>()
+                .having(
+                  (e) => e is SocialAuthCancelledException,
+                  'cancel',
+                  false,
+                )
+                .having((e) => e.code, 'code', 'sdk_error')
+                .having(
+                  (e) => e.message,
+                  'message',
+                  isNot(contains('serverClientId')),
+                ),
+          ),
+        );
+        expect(
+          log.entries.single,
+          isA<FakeLogEntry>()
+              .having((e) => e.level, 'level', 'error')
+              .having((e) => e.message, 'message', contains('serverClientId')),
+        );
+      },
+    );
+
+    test('an account without an ID token is refused before any post', () async {
+      final _FakeGoogleDriver driver = _FakeGoogleDriver(idToken: null);
 
       await expectLater(
-        driver.getToken(),
-        throwsA(same(original)),
+        driver.signIn(),
+        throwsA(
+          isA<SocialAuthException>().having((e) => e.code, 'code', 'sdk_error'),
+        ),
       );
+      expect(sent(), isEmpty);
+      expect(log.entries.single.message, contains('server_client_id'));
     });
 
-    test('the native path returns its token when nothing throws', () async {
-      final driver = _FakeGoogleDriver();
+    test('a backend refusal surfaces with its code', () async {
+      http = Http.fake({
+        '/auth/social/google/token': Http.response({
+          'message': 'Taken.',
+          'code': 'social_email_taken',
+        }, 409),
+      });
 
-      final SocialToken token = await driver.getToken();
+      await expectLater(
+        _FakeGoogleDriver().signIn(),
+        throwsA(
+          isA<SocialAuthException>().having(
+            (e) => e.code,
+            'code',
+            'social_email_taken',
+          ),
+        ),
+      );
+    });
+  });
 
-      expect(token.provider, 'google');
-      expect(token.accessToken, 'native-access-token');
+  group('initialize', () {
+    test('two drivers share one initialize call', () async {
+      await _FakeGoogleDriver().signIn();
+      await _FakeGoogleDriver().signIn();
+      await _FakeGoogleDriver().signOut();
+
+      expect(_FakeGoogleDriver.initializations, hasLength(1));
+    });
+
+    test('passes ios_client_id only on iOS, server_client_id on both', () {
+      const Map<String, dynamic> config = {
+        'ios_client_id': 'ios.apps.googleusercontent.com',
+        'server_client_id': 'web.apps.googleusercontent.com',
+      };
+
+      final GoogleDriver ios = GoogleDriver(
+        config,
+        platform: SocialPlatform.ios,
+      );
+      final GoogleDriver android = GoogleDriver(
+        config,
+        platform: SocialPlatform.android,
+      );
+
+      expect(ios.clientId, 'ios.apps.googleusercontent.com');
+      expect(android.clientId, isNull);
+      expect(ios.serverClientId, 'web.apps.googleusercontent.com');
+      expect(android.serverClientId, 'web.apps.googleusercontent.com');
+    });
+
+    test('an empty client id is no client id, so Info.plist applies', () {
+      const Map<String, dynamic> config = {
+        'ios_client_id': '',
+        'server_client_id': '',
+      };
+
+      final GoogleDriver ios = GoogleDriver(
+        config,
+        platform: SocialPlatform.ios,
+      );
+
+      expect(ios.clientId, isNull);
+      expect(ios.serverClientId, isNull);
+    });
+  });
+
+  group('connect', () {
+    test('posts intent connect with the proof', () async {
+      final _FakeGoogleDriver driver = _FakeGoogleDriver();
+      http = Http.fake({
+        '/auth/social/google/token': Http.response({
+          'data': {'provider': 'google', 'email': 'a@example.com'},
+        }),
+      });
+
+      final SocialAuthResult result = await driver.connect({'password': 'x'});
+
+      expect(sent().single.data, {
+        'id_token': 'google-id-token',
+        'intent': 'connect',
+        'password': 'x',
+      });
+      expect(result.connectedProvider, 'google');
+    });
+
+    test('beginConnect opens the sheet only when its call runs', () async {
+      final _FakeGoogleDriver driver = _FakeGoogleDriver();
+
+      final Future<SocialAuthResult> Function() finish = await driver
+          .beginConnect(null);
+
+      expect(driver.sheets, 0);
+      await finish();
+      expect(driver.sheets, 1);
+      expect(sent().single.data, {
+        'id_token': 'google-id-token',
+        'intent': 'connect',
+      });
+    });
+  });
+
+  test(
+    'confirm posts intent confirm and reads the confirmation token',
+    () async {
+      http = Http.fake({
+        '/auth/social/google/token': Http.response({
+          'data': {'confirmation_token': 'c0nf'},
+        }),
+      });
+
+      final SocialAuthResult result = await _FakeGoogleDriver().confirm();
+
+      expect(sent().single.data, {
+        'id_token': 'google-id-token',
+        'intent': 'confirm',
+      });
+      expect(result.confirmationToken, 'c0nf');
+    },
+  );
+
+  group('signOut', () {
+    test('signs the SDK out after the memoized initialize', () async {
+      final _FakeGoogleDriver driver = _FakeGoogleDriver();
+
+      await driver.signOut();
+
+      expect(_FakeGoogleDriver.initializations, hasLength(1));
+      expect(driver.sdkSignOuts, 1);
+    });
+
+    test('never touches the SDK off iOS and Android', () async {
+      final _FakeGoogleDriver driver = _FakeGoogleDriver(
+        platform: SocialPlatform.macos,
+      );
+
+      await driver.signOut();
+
+      expect(_FakeGoogleDriver.initializations, isEmpty);
+      expect(driver.sdkSignOuts, 0);
     });
   });
 }
 
-/// A [GoogleDriver] with the platform channel stood in for.
-///
-/// Only the two seams are replaced: `getToken`'s own control flow, and the
-/// catch clauses under test, are the real ones.
+/// A [GoogleDriver] with the platform channel stood in for; the memoized
+/// initialize and every post are the real ones.
 class _FakeGoogleDriver extends GoogleDriver {
-  _FakeGoogleDriver({this.throwing})
-      : super(const {
-          'client_id': 'test',
-          'scopes': ['email']
-        });
+  _FakeGoogleDriver({
+    this.throwing,
+    this.idToken = 'google-id-token',
+    SocialPlatform platform = SocialPlatform.android,
+  }) : super(const {'server_client_id': 'web-client'}, platform: platform);
 
-  /// Thrown from the native path, or null to return a token.
+  /// Every SDK initialize, across all instances.
+  static final List<_FakeGoogleDriver> initializations = [];
+
   final Object? throwing;
 
-  @override
-  Future<void> ensureInitialized() async {}
+  final String? idToken;
+
+  int sheets = 0;
+
+  int sdkSignOuts = 0;
 
   @override
-  bool get supportsNativeSignIn => true;
+  Future<void> initializeSdk() async => initializations.add(this);
 
   @override
-  Future<SocialToken> nativeSignIn() async {
+  Future<String?> nativeSignIn() async {
+    sheets++;
     if (throwing != null) throw throwing!;
-    return const SocialToken(
-      provider: 'google',
-      accessToken: 'native-access-token',
-    );
+
+    return idToken;
   }
+
+  @override
+  Future<void> signOutSdk() async => sdkSignOuts++;
 }

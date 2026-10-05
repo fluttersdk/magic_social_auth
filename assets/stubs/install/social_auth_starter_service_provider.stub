@@ -1,0 +1,226 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
+import 'package:magic/magic.dart';
+import 'package:magic_social_auth/magic_social_auth.dart';
+import 'package:magic_starter/magic_starter.dart';
+
+/// Hands magic_starter's login, register and account screens to
+/// magic_social_auth.
+///
+/// List it after the auth and starter providers. The bridge is registered in
+/// `register`, because magic boots providers in list order and this one sits
+/// after `RouteServiceProvider`, whose routes must already see it; `boot`
+/// starts listening to `Auth.stateNotifier`.
+class SocialAuthStarterServiceProvider extends ServiceProvider {
+  SocialAuthStarterServiceProvider(super.app);
+
+  final AppSocialAuth _bridge = AppSocialAuth();
+
+  @override
+  void register() => MagicStarter.useSocialAuth(_bridge);
+
+  @override
+  Future<void> boot() async => _bridge.watchAuthState();
+}
+
+/// The starter's [MagicStarterSocialAuth] over [SocialAuth].
+///
+/// Every failure leaves as a [MagicStarterSocialException]: a cancelled flow is
+/// marked `cancelled`, a backend refusal carries its `code`.
+class AppSocialAuth implements MagicStarterSocialAuth {
+  bool _signedIn = false;
+
+  /// The name Apple shared with the sign-in that is about to open a session.
+  /// Apple sends it on the first authorization only, so it is applied once the
+  /// starter has logged the user in, or it is lost.
+  String? _appleName;
+
+  /// Starts following the signed-in state; call once, from `boot`, when the
+  /// auth guard can be read.
+  void watchAuthState() {
+    _signedIn = Auth.check();
+    Auth.stateNotifier.addListener(_onAuthStateChanged);
+  }
+
+  @override
+  List<String> providers() {
+    final Map<String, dynamic> configured =
+        Config.get<Map<String, dynamic>>('social_auth.providers') ??
+        <String, dynamic>{};
+    final bool appleFirst = SocialAuth.manager.platform == SocialPlatform.ios;
+
+    int rank(String provider) => appleFirst && provider == 'apple'
+        ? -1
+        : SocialProviderIcons.forProvider(provider)?.order ?? 99;
+
+    return <String>[
+      for (final MapEntry<String, dynamic> entry in configured.entries)
+        if ((entry.value as Map<String, dynamic>)['enabled'] != false &&
+            SocialAuth.supports(entry.key))
+          entry.key,
+    ]..sort((String a, String b) => rank(a).compareTo(rank(b)));
+  }
+
+  @override
+  String label(String provider) {
+    return SocialProviderIcons.forProvider(provider)?.label ?? provider;
+  }
+
+  @override
+  Widget icon(String provider) {
+    final SocialProviderDefaults? defaults = SocialProviderIcons.forProvider(
+      provider,
+    );
+    if (defaults == null) return const SizedBox.shrink();
+
+    return WSvg.string(
+      defaults.iconSvg,
+      className: 'w-5 h-5 ${defaults.iconClassName ?? ''}'.trim(),
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> signIn(String provider) {
+    _appleName = null;
+
+    return _guard(() async {
+      final SocialAuthResult result = await SocialAuth.driver(provider).signIn();
+      // A new Apple account never has 2FA, so a challenged sign-in is an
+      // existing account whose name is already set.
+      if (result is AppleSignInResult && !result.isTwoFactor) {
+        _rememberAppleName(result);
+      }
+
+      return _signInBody(result);
+    });
+  }
+
+  @override
+  Future<Future<Map<String, dynamic>> Function()> beginConnect(
+    String provider,
+    Map<String, String> proof,
+  ) {
+    return _guard(() async {
+      final Future<SocialAuthResult> Function() open = await SocialAuth.driver(
+        provider,
+      ).beginConnect(proof.isEmpty ? null : proof);
+
+      return () => _guard(() async {
+        final SocialAuthResult result = await open();
+
+        return <String, dynamic>{
+          'data': <String, dynamic>{'provider': result.connectedProvider},
+        };
+      });
+    });
+  }
+
+  @override
+  Future<String> confirm(String provider) {
+    return _guard(() async {
+      final SocialAuthResult result = await SocialAuth.driver(provider).confirm();
+      final String? token = result.confirmationToken;
+      if (token == null) {
+        throw const MagicStarterSocialException(
+          code: 'invalid_identity',
+          message: 'Could not verify your identity. Try again.',
+        );
+      }
+
+      return token;
+    });
+  }
+
+  @override
+  Future<void> signOut() => SocialAuth.signOut();
+
+  void _onAuthStateChanged() {
+    final bool wasSignedIn = _signedIn;
+    _signedIn = Auth.check();
+
+    if (_signedIn) {
+      _applyAppleName();
+      return;
+    }
+
+    _appleName = null;
+    // The manager signs out the drivers it has cached, which a session restored
+    // at boot never created, so Google is signed out by name.
+    if (wasSignedIn) unawaited(_signOutGoogle());
+  }
+
+  /// Runs unawaited, so a failure (a memoized failed `initialize` rethrows on
+  /// every call) is logged here instead of escaping into the zone.
+  Future<void> _signOutGoogle() async {
+    final SocialPlatform platform = SocialAuth.manager.platform;
+    final bool sdkInUse =
+        platform == SocialPlatform.ios || platform == SocialPlatform.android;
+    if (!sdkInUse || !providers().contains('google')) return;
+
+    try {
+      await SocialAuth.driver('google').signOut();
+    } catch (error) {
+      Log.error('Google SDK sign-out failed: $error');
+    }
+  }
+
+  void _rememberAppleName(AppleSignInResult result) {
+    final String name = <String?>[
+      result.givenName,
+      result.familyName,
+    ].whereType<String>().where((part) => part.isNotEmpty).join(' ');
+
+    _appleName = name.isEmpty ? null : name;
+  }
+
+  void _applyAppleName() {
+    final String? name = _appleName;
+    final Authenticatable? user = Auth.user();
+    final String? email = user?.get<String>('email');
+    if (name == null || user == null || email == null) return;
+
+    _appleName = null;
+    // The backend names a new Apple account after its email's local part;
+    // any other name was chosen by the user and stays.
+    if (user.get<String>('name') != email.split('@').first) return;
+
+    unawaited(
+      MagicStarterProfileController.instance.doUpdateProfile(
+        name: name,
+        email: email,
+      ),
+    );
+  }
+
+  Map<String, dynamic> _signInBody(SocialAuthResult result) {
+    if (result.isTwoFactor) {
+      return <String, dynamic>{
+        'two_factor': true,
+        'two_factor_token': result.twoFactorToken,
+      };
+    }
+
+    return <String, dynamic>{
+      'data': <String, dynamic>{
+        'token': result.token,
+        'user': result.user,
+        'deletion_cancelled': result.deletionCancelled,
+      },
+    };
+  }
+
+  /// Runs [action] and rethrows what it throws as the starter's exception.
+  ///
+  /// [action] starts in the caller's synchronous run, which a web provider
+  /// popup needs.
+  Future<T> _guard<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } on SocialAuthCancelledException catch (error) {
+      throw MagicStarterSocialException(message: error.message, cancelled: true);
+    } on SocialAuthException catch (error) {
+      throw MagicStarterSocialException(code: error.code, message: error.message);
+    }
+  }
+}

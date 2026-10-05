@@ -1,35 +1,38 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:magic_social_auth/src/social_auth_manager.dart';
+import 'package:magic/magic.dart';
 import 'package:magic_social_auth/src/contracts/social_driver.dart';
-import 'package:magic_social_auth/src/models/social_token.dart';
+import 'package:magic_social_auth/src/drivers/apple_driver.dart';
+import 'package:magic_social_auth/src/drivers/google_driver.dart';
+import 'package:magic_social_auth/src/drivers/redirect_driver.dart';
+import 'package:magic_social_auth/src/exceptions/social_auth_exception.dart';
+import 'package:magic_social_auth/src/models/social_auth_result.dart';
 import 'package:magic_social_auth/src/models/social_platform.dart';
+import 'package:magic_social_auth/src/social_auth_manager.dart';
 
-/// Mock driver for testing
+/// A driver that records its sign-out.
 class MockDriver extends SocialDriver {
-  bool signOutCalled = false;
-
   MockDriver(super.config);
+
+  bool signOutCalled = false;
 
   @override
   String get name => 'mock';
 
   @override
-  Set<SocialPlatform> get supportedPlatforms => {
-        SocialPlatform.ios,
-        SocialPlatform.android,
-        SocialPlatform.web,
-        SocialPlatform.macos,
-        SocialPlatform.windows,
-        SocialPlatform.linux,
-      };
+  Set<SocialPlatform> get supportedPlatforms => SocialPlatform.values.toSet();
 
   @override
-  Future<SocialToken> getToken() async {
-    return const SocialToken(
-      provider: 'mock',
-      accessToken: 'mock_token',
-    );
+  Future<SocialAuthResult> signIn() async => const SocialAuthResult();
+
+  @override
+  Future<Future<SocialAuthResult> Function()> beginConnect(
+    Map<String, String>? proof,
+  ) async {
+    return () async => const SocialAuthResult();
   }
+
+  @override
+  Future<SocialAuthResult> confirm() async => const SocialAuthResult();
 
   @override
   Future<void> signOut() async {
@@ -38,124 +41,135 @@ class MockDriver extends SocialDriver {
 }
 
 void main() {
-  group('SocialAuthManager', () {
-    late SocialAuthManager manager;
+  late SocialAuthManager manager;
 
-    setUp(() {
-      manager = SocialAuthManager();
-      manager.forgetDrivers(); // Clear any cached drivers
+  setUp(() {
+    MagicApp.reset();
+    Config.flush();
+    manager = SocialAuthManager();
+    manager.forgetDrivers();
+  });
+
+  tearDown(() {
+    manager.platformOverride = null;
+    MagicApp.reset();
+  });
+
+  group('built-in drivers', () {
+    test('resolve google, apple, github and microsoft with no config', () {
+      for (final String name in ['google', 'apple', 'github', 'microsoft']) {
+        expect(manager.driver(name).name, name);
+      }
     });
 
-    group('driver resolution', () {
-      test('driver returns cached instance on second call', () {
-        manager.extend('mock', (config) => MockDriver(config));
+    test('use the native SDKs where they run', () {
+      manager.platformOverride = SocialPlatform.ios;
 
-        final driver1 = manager.driver('mock');
-        final driver2 = manager.driver('mock');
-
-        expect(driver1, same(driver2));
-      });
-
-      test('driver throws for unsupported driver', () {
-        expect(
-          () => manager.driver('nonexistent'),
-          throwsA(isA<ArgumentError>()),
-        );
-      });
-
-      test('extend registers custom driver factory', () {
-        manager.extend('custom', (config) => MockDriver(config));
-        final driver = manager.driver('custom');
-        expect(driver, isA<MockDriver>());
-      });
-
-      test('forgetDrivers clears cache', () {
-        int callCount = 0;
-        manager.extend('mock', (config) {
-          callCount++;
-          return MockDriver(config);
-        });
-
-        manager.driver('mock');
-        expect(callCount, 1);
-
-        manager.forgetDrivers();
-
-        manager.driver('mock');
-        expect(callCount, 2);
-      });
+      expect(manager.driver('google'), isA<GoogleDriver>());
+      expect(manager.driver('apple'), isA<AppleDriver>());
+      expect(manager.driver('github'), isA<RedirectDriver>());
+      expect(manager.driver('microsoft'), isA<RedirectDriver>());
     });
 
-    group('platform support', () {
-      test('driver supportsPlatform can be called', () {
-        manager.extend('mock', (config) => MockDriver(config));
-        final driver = manager.driver('mock');
-        // supportsPlatform() checks against current platform
-        // MockDriver declares support for all platforms, so this will be true
-        expect(driver.supportsPlatform(), isTrue);
-      });
+    test('Apple on Android goes through the browser flow', () {
+      manager.platformOverride = SocialPlatform.android;
 
-      test('resolving unsupported driver throws', () {
-        expect(
-          () => manager.driver('nonexistent'),
-          throwsA(isA<ArgumentError>()),
-        );
-      });
+      final SocialDriver apple = manager.driver('apple');
+
+      expect(apple, isA<RedirectDriver>());
+      expect(apple.name, 'apple');
+      expect(apple.supportsPlatform(), isTrue);
+      expect(manager.driver('google'), isA<GoogleDriver>());
     });
 
-    group('signOut', () {
-      test('signOut calls signOut on all cached drivers', () async {
-        // Create mock driver and register it
-        final mockDriver = MockDriver({});
-        manager.extend('mock', (config) => mockDriver);
+    test('every provider goes through the browser flow on the web', () {
+      manager.platformOverride = SocialPlatform.web;
 
-        // Access the driver to cache it
-        manager.driver('mock');
+      for (final String name in ['google', 'apple', 'github', 'microsoft']) {
+        expect(manager.driver(name), isA<RedirectDriver>());
+        expect(manager.driver(name).supportsPlatform(), isTrue);
+      }
+    });
 
-        // Call signOut
-        await manager.signOut();
+    test('a disabled provider is refused', () {
+      Config.set('social_auth.providers.github', {'enabled': false});
 
-        expect(mockDriver.signOutCalled, isTrue);
+      expect(
+        () => manager.driver('github'),
+        throwsA(isA<ProviderNotConfiguredException>()),
+      );
+    });
+
+    test('an unknown provider is an ArgumentError', () {
+      expect(() => manager.driver('nonexistent'), throwsArgumentError);
+    });
+
+    test('drivers receive their provider config', () {
+      Config.set('social_auth.providers.google', {
+        'server_client_id': 'web-client',
+      });
+      manager.platformOverride = SocialPlatform.android;
+
+      final GoogleDriver google = manager.driver('google') as GoogleDriver;
+
+      expect(google.serverClientId, 'web-client');
+    });
+  });
+
+  group('extend', () {
+    test('registers a custom driver and caches it', () {
+      manager.extend('custom', (config) => MockDriver(config));
+
+      expect(manager.driver('custom'), isA<MockDriver>());
+      expect(manager.driver('custom'), same(manager.driver('custom')));
+    });
+
+    test('overrides a built-in provider', () {
+      manager.extend('google', (config) => MockDriver(config));
+
+      expect(manager.driver('google'), isA<MockDriver>());
+    });
+
+    test('forgetDrivers rebuilds on the next call', () {
+      int built = 0;
+      manager.extend('mock', (config) {
+        built++;
+
+        return MockDriver(config);
       });
 
-      test('signOut clears cached driver instances', () async {
-        // Track how many times factory is called
-        int factoryCallCount = 0;
-        manager.extend('mock', (config) {
-          factoryCallCount++;
-          return MockDriver(config);
-        });
+      manager.driver('mock');
+      manager.forgetDrivers();
+      manager.driver('mock');
 
-        // Access driver once - factory called once
-        manager.driver('mock');
-        expect(factoryCallCount, 1);
+      expect(built, 2);
+    });
+  });
 
-        // Call signOut - should clear cache
-        await manager.signOut();
+  group('signOut', () {
+    test('signs out every cached driver and clears the cache', () async {
+      final MockDriver first = MockDriver(const {});
+      final MockDriver second = MockDriver(const {});
+      int built = 0;
+      manager.extend('mock1', (config) {
+        built++;
 
-        // Access driver again - factory should be called again (not from cache)
-        manager.driver('mock');
-        expect(factoryCallCount, 2);
+        return first;
       });
+      manager.extend('mock2', (config) => second);
+      manager.driver('mock1');
+      manager.driver('mock2');
 
-      test('signOut handles multiple cached drivers', () async {
-        final mockDriver1 = MockDriver({});
-        final mockDriver2 = MockDriver({});
+      await manager.signOut();
+      manager.driver('mock1');
 
-        manager.extend('mock1', (config) => mockDriver1);
-        manager.extend('mock2', (config) => mockDriver2);
+      expect(first.signOutCalled, isTrue);
+      expect(second.signOutCalled, isTrue);
+      expect(built, 2);
+    });
 
-        // Cache both drivers
-        manager.driver('mock1');
-        manager.driver('mock2');
-
-        // Call signOut
-        await manager.signOut();
-
-        // Both should have signOut called
-        expect(mockDriver1.signOutCalled, isTrue);
-        expect(mockDriver2.signOutCalled, isTrue);
-      });
+    test('completes with nothing cached', () async {
+      await expectLater(manager.signOut(), completes);
     });
   });
 }

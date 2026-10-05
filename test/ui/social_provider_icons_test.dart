@@ -34,6 +34,15 @@ void main() {
       expect(defaults.iconClassName, 'fill-slate-900 dark:fill-white');
     });
 
+    test('forProvider returns built-in defaults for apple', () {
+      final defaults = SocialProviderIcons.forProvider('apple');
+      expect(defaults, isNotNull);
+      expect(defaults!.label, 'Apple');
+      expect(defaults.iconSvg, SocialProviderIcons.appleSvg);
+      expect(defaults.order, 4);
+      expect(defaults.iconClassName, 'fill-slate-900 dark:fill-white');
+    });
+
     test('forProvider returns null for unknown provider', () {
       final defaults = SocialProviderIcons.forProvider('unknown');
       expect(defaults, isNull);
@@ -43,6 +52,7 @@ void main() {
       expect(SocialProviderIcons.has('google'), isTrue);
       expect(SocialProviderIcons.has('microsoft'), isTrue);
       expect(SocialProviderIcons.has('github'), isTrue);
+      expect(SocialProviderIcons.has('apple'), isTrue);
       expect(SocialProviderIcons.has('unknown'), isFalse);
     });
 
@@ -111,6 +121,9 @@ void main() {
       expect(SocialProviderIcons.githubSvg, startsWith('<svg'));
       expect(SocialProviderIcons.githubSvg, endsWith('</svg>'));
       expect(SocialProviderIcons.githubSvg.length, greaterThan(10));
+
+      expect(SocialProviderIcons.appleSvg, startsWith('<svg'));
+      expect(SocialProviderIcons.appleSvg, endsWith('</svg>'));
     });
   });
 }

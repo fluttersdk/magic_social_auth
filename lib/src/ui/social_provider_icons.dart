@@ -18,7 +18,7 @@ class SocialProviderDefaults {
 
 /// Built-in SVG icons and UI defaults for social auth providers.
 ///
-/// Provides default icons for Google, Microsoft, and GitHub.
+/// Provides default icons for Google, Microsoft, GitHub and Apple.
 /// Custom providers can register their own defaults via [register].
 class SocialProviderIcons {
   SocialProviderIcons._();
@@ -32,6 +32,9 @@ class SocialProviderIcons {
 
   static const String githubSvg =
       '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.607.069-.607 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z" fill="currentColor"/></svg>';
+
+  static const String appleSvg =
+      '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701" fill="currentColor"/></svg>';
 
   /// Built-in defaults for known providers.
   static const Map<String, SocialProviderDefaults> _builtIn = {
@@ -50,6 +53,12 @@ class SocialProviderIcons {
       iconSvg: githubSvg,
       iconClassName: 'fill-slate-900 dark:fill-white',
       order: 3,
+    ),
+    'apple': SocialProviderDefaults(
+      label: 'Apple',
+      iconSvg: appleSvg,
+      iconClassName: 'fill-slate-900 dark:fill-white',
+      order: 4,
     ),
   };
 

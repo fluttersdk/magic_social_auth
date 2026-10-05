@@ -1,5 +1,6 @@
 import 'package:fluttersdk_artisan/artisan.dart';
 
+import 'commands/social_doctor_command.dart';
 import 'commands/social_install_command.dart';
 
 /// Contributes social:* commands to the artisan dispatcher.
@@ -14,11 +15,15 @@ import 'commands/social_install_command.dart';
 /// };
 /// ```
 ///
-/// V1 ships 1 command: social:install. Full install logic deferred to V1.x.
+/// Ships `social:install` (config, native files and the starter bridge) and
+/// `social:doctor` (checks them and prints the backend env to set).
 class MagicSocialAuthArtisanProvider extends ArtisanServiceProvider {
   @override
   String get providerName => 'magic_social_auth';
 
   @override
-  List<ArtisanCommand> commands() => <ArtisanCommand>[SocialInstallCommand()];
+  List<ArtisanCommand> commands() => <ArtisanCommand>[
+    SocialInstallCommand(),
+    SocialDoctorCommand(),
+  ];
 }

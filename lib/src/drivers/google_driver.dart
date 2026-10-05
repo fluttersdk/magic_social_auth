@@ -1,157 +1,151 @@
-import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:magic/magic.dart';
+import 'package:magic/magic.dart' show Log;
 
 import '../contracts/social_driver.dart';
-import '../models/social_platform.dart';
-import '../models/social_token.dart';
 import '../exceptions/social_auth_exception.dart';
+import '../flow/social_flow.dart';
+import '../models/social_auth_result.dart';
+import '../models/social_platform.dart';
 
-/// Google Sign In driver.
+/// Google through the native SDK on iOS and Android.
 ///
-/// Uses native Google Sign In SDK on mobile.
-/// On web, uses authorization popup flow.
+/// The SDK's ID token is posted to `auth/social/google/token`, which verifies
+/// it; no nonce goes with it (the backend prohibits one for Google). The web
+/// signs in with Google through `RedirectDriver`, so this driver never touches
+/// the SDK there.
 ///
-/// Requires google_sign_in 7.x+ with new singleton API.
+/// Config (`social_auth.providers.google`): `ios_client_id` (the iOS OAuth
+/// client) and `server_client_id` (the web OAuth client, the ID token's
+/// audience the backend accepts).
 class GoogleDriver extends SocialDriver {
-  GoogleDriver(super.config);
+  GoogleDriver(super.config, {super.platform, SocialFlow? flow})
+    : _flow = flow ?? SocialFlow(platform: platform);
 
-  bool _initialized = false;
+  /// The SDK accepts one `initialize` per process, so every instance shares
+  /// the first one, failed or not.
+  static Future<void>? _initialization;
+
+  final SocialFlow _flow;
 
   @override
   String get name => 'google';
 
   @override
   Set<SocialPlatform> get supportedPlatforms => {
-        SocialPlatform.ios,
-        SocialPlatform.android,
-        SocialPlatform.web,
-      };
+    SocialPlatform.ios,
+    SocialPlatform.android,
+  };
 
-  /// Whether the platform offers the native sign-in sheet.
+  /// The iOS OAuth client; Android reads its client from the signing key.
   ///
-  /// A seam, not indirection for its own sake: everything below it talks to the
-  /// platform channel, so without something to override a test cannot reach
-  /// [getToken]'s try/catch at all, which is where this driver's whole contract
-  /// lives.
-  @visibleForTesting
-  bool get supportsNativeSignIn => GoogleSignIn.instance.supportsAuthenticate();
+  /// Null when unset or empty, so the SDK falls back to `GIDClientID` in
+  /// `Info.plist` instead of being handed the config stub's `''`.
+  String? get clientId =>
+      platform == SocialPlatform.ios ? _configured('ios_client_id') : null;
 
-  /// Runs the native sheet and converts the account it returns.
-  ///
-  /// Overridden in tests to stand in for the platform channel. See
-  /// [supportsNativeSignIn] for why the seam exists.
-  @visibleForTesting
-  Future<SocialToken> nativeSignIn() async {
-    final account = await GoogleSignIn.instance.authenticate();
-    return await accountToToken(account);
-  }
-
-  /// Prepares the SDK, exposed so a test can stand in for the platform channel.
-  @visibleForTesting
-  Future<void> ensureInitialized() => _ensureInitialized();
+  /// The web OAuth client the ID token is minted for, the audience the backend
+  /// verifies; null when unset or empty, as with [clientId].
+  String? get serverClientId => _configured('server_client_id');
 
   @override
-  Future<SocialToken> getToken() async {
-    await ensureInitialized();
+  Future<SocialAuthResult> signIn() => _post(SocialIntent.signIn);
 
-    try {
-      final scopes = (config['scopes'] as List<dynamic>?)?.cast<String>() ??
-          ['email', 'profile'];
-
-      // Mobile: Use native authenticate
-      if (supportsNativeSignIn) {
-        // `await`, not a bare return: this sits inside the try whose catch
-        // clauses are what turn a provider error into SocialAuthException /
-        // SocialAuthCancelledException. Returning the future unawaited lets
-        // anything the native path throws skip those handlers and reach the
-        // caller raw, breaking the driver's contract.
-        return await nativeSignIn();
-      }
-
-      final signIn = GoogleSignIn.instance;
-
-      // Web: Skip FedCM One Tap, go directly to authorization popup
-      Log.info('Starting Google authorization popup...');
-
-      final authClient = signIn.authorizationClient;
-      final authorization = await authClient.authorizeScopes(scopes);
-
-      Log.info('Google authorization successful');
-
-      // Web authorization only gives access_token
-      // Backend will fetch user info from Google's userinfo API
-      return SocialToken(
-        provider: name,
-        accessToken: authorization.accessToken,
-        idToken: null,
-        email: null,
-        name: null,
-        avatarUrl: null,
-      );
-    } on SocialAuthException {
-      rethrow;
-    } on GoogleSignInException catch (e) {
-      if (e.code == GoogleSignInExceptionCode.canceled) {
-        throw const SocialAuthCancelledException();
-      }
-      Log.error('Google Sign In failed: ${e.code} - ${e.description}');
-      throw SocialAuthException('Google Sign In failed: ${e.description}');
-    } catch (e) {
-      Log.error('Google Sign In failed: $e');
-      throw SocialAuthException('Google Sign In failed: $e');
-    }
+  @override
+  Future<Future<SocialAuthResult> Function()> beginConnect(
+    Map<String, String>? proof,
+  ) async {
+    return () => _post(SocialIntent.connect, proof);
   }
 
-  /// Convert account to SocialToken.
-  @visibleForTesting
-  Future<SocialToken> accountToToken(GoogleSignInAccount account) async {
-    final idToken = account.authentication.idToken;
-    final scopes = (config['scopes'] as List<dynamic>?)?.cast<String>() ??
-        ['email', 'profile'];
+  @override
+  Future<SocialAuthResult> confirm() => _post(SocialIntent.confirm);
 
-    String? accessToken;
-    try {
-      final authorization =
-          await account.authorizationClient.authorizationForScopes(scopes);
-      accessToken = authorization?.accessToken;
-    } catch (e) {
-      Log.warning('Could not get access token: $e');
-    }
-
-    return SocialToken(
-      provider: name,
-      accessToken: accessToken ?? '',
-      idToken: idToken,
-      email: account.email,
-      name: account.displayName,
-      avatarUrl: account.photoUrl,
-    );
-  }
-
+  /// Signs the SDK out, so the next sign-in offers the account picker again.
   @override
   Future<void> signOut() async {
-    try {
-      await GoogleSignIn.instance.signOut();
-      Log.info('Google Sign Out successful');
-    } catch (e) {
-      Log.warning('Google Sign Out failed: $e');
-      // Don't throw - sign out is best effort
-    }
+    if (!supportsPlatform()) return;
+
+    await _ensureInitialized();
+    await signOutSdk();
   }
 
-  Future<void> _ensureInitialized() async {
-    if (_initialized) return;
+  /// Forgets the process-wide initialize, so each test starts from none.
+  @visibleForTesting
+  static void resetInitialization() => _initialization = null;
 
-    final clientId = config['client_id'] as String?;
-    final serverClientId = config['server_client_id'] as String?;
-
-    // serverClientId is only supported on mobile (iOS/Android), not on web
-    await GoogleSignIn.instance.initialize(
+  /// The SDK's `initialize`; a seam over the platform channel.
+  @visibleForTesting
+  Future<void> initializeSdk() {
+    return GoogleSignIn.instance.initialize(
       clientId: clientId,
-      serverClientId: kIsWeb ? null : serverClientId,
+      serverClientId: serverClientId,
     );
+  }
 
-    _initialized = true;
+  /// Opens the native account sheet and answers the account's ID token; a
+  /// seam over the platform channel.
+  @visibleForTesting
+  Future<String?> nativeSignIn() async {
+    final GoogleSignInAccount account = await GoogleSignIn.instance
+        .authenticate();
+
+    return account.authentication.idToken;
+  }
+
+  /// The SDK's `signOut`; a seam over the platform channel.
+  @visibleForTesting
+  Future<void> signOutSdk() => GoogleSignIn.instance.signOut();
+
+  Future<void> _ensureInitialized() => _initialization ??= initializeSdk();
+
+  String? _configured(String key) {
+    final String? value = config[key] as String?;
+
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  Future<SocialAuthResult> _post(
+    SocialIntent intent, [
+    Map<String, String>? proof,
+  ]) async {
+    final String idToken = await _idToken();
+
+    return _flow.token(name, idToken: idToken, intent: intent, proof: proof);
+  }
+
+  Future<String> _idToken() async {
+    final String? idToken;
+    try {
+      await _ensureInitialized();
+      idToken = await nativeSignIn();
+    } on GoogleSignInException catch (error) {
+      // Android also reports a misconfigured client (SHA-1, package name,
+      // server_client_id) as canceled, so the cancel copy invites a retry.
+      if (error.code == GoogleSignInExceptionCode.canceled) {
+        throw const SocialAuthCancelledException();
+      }
+
+      Log.error(
+        'Google sign-in failed: ${error.description ?? error.code.name}',
+      );
+      throw const SocialAuthException(
+        'Google sign-in could not be completed.',
+        code: 'sdk_error',
+      );
+    }
+
+    if (idToken == null) {
+      Log.error(
+        'Google returned no ID token. Set '
+        'social_auth.providers.google.server_client_id.',
+      );
+      throw const SocialAuthException(
+        'Google sign-in could not be completed.',
+        code: 'sdk_error',
+      );
+    }
+
+    return idToken;
   }
 }

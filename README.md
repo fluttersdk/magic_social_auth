@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Laravel Socialite-style social authentication for the Magic Framework.</strong><br/>
-  Config-driven OAuth with extensible drivers for Google, Microsoft, GitHub, and beyond.
+  Native Google and Apple sheets, a backend-hosted browser flow for GitHub and Microsoft, on iOS, Android and web.
 </p>
 
 <p align="center">
@@ -27,17 +27,17 @@
 
 ---
 
-> **Alpha** — `magic_social_auth` is under active development. APIs may change between minor versions until `1.0.0`.
+> **Alpha**: `magic_social_auth` is under active development. APIs may change between minor versions until `1.0.0`.
 
 ---
 
 ## Why Magic Social Auth?
 
-Adding social login to a Flutter app means juggling platform-specific SDKs, OAuth redirect flows, token exchange with your backend, and wiring it all together differently for each provider. Every project reinvents the same boilerplate.
+Adding social login to a Flutter app means juggling platform SDKs, OAuth redirects, nonce and PKCE rules, native project edits on three platforms, and a backend that has to agree on every value. Every project reinvents the same boilerplate.
 
-**Magic Social Auth** gives you a Socialite-style facade. One config file declares your providers. One line authenticates. Drivers handle platform differences. A pluggable handler chain sends tokens to your backend.
+**Magic Social Auth** is the client of `magic-starter-laravel`'s social login. `social:install` makes the native edits, `social:doctor` checks them and prints the backend `.env` lines, and the drivers run the flow: native Google and Apple sheets on mobile, a backend-hosted browser flow with PKCE for everything else.
 
-> **Config-driven social auth.** Define your providers, credentials, and scopes once. Magic Social Auth handles the rest.
+> **One contract, four providers.** Google, Apple, GitHub and Microsoft on iOS, Android and web, signing in, connecting, confirming and disconnecting against the same backend API.
 
 ---
 
@@ -45,14 +45,15 @@ Adding social login to a Flutter app means juggling platform-specific SDKs, OAut
 
 | | Feature | Description |
 |---|---------|-------------|
-| :key: | **Socialite-Style API** | `SocialAuth.driver('google').authenticate()` — familiar, expressive |
-| :busts_in_silhouette: | **Built-in Drivers** | Google (native SDK), Microsoft (OAuth), GitHub (OAuth) out of the box |
-| :electric_plug: | **Extensible Drivers** | Add any provider via `manager.extend('apple', factory)` |
-| :arrows_counterclockwise: | **Custom Auth Handlers** | Swap the default HTTP handler for Firebase, Supabase, or anything else |
-| :iphone: | **Platform Detection** | Drivers declare supported platforms — check with `SocialAuth.supports()` |
-| :art: | **Config-Driven UI** | `SocialAuthButtons` widget renders enabled providers with icons automatically |
-| :door: | **Sign-Out Support** | `SocialAuth.signOut()` clears cached sessions across all providers |
-| :package: | **Service Provider** | Two-phase bootstrap via Magic's IoC container — zero manual wiring |
+| :key: | **Socialite-Style API** | `SocialAuth.driver('google').signIn()`, familiar and expressive |
+| :iphone: | **Native Sheets** | Google on iOS and Android, Sign in with Apple on iOS: the ID token is verified by the backend, never a provider access token |
+| :globe_with_meridians: | **Browser Flow with PKCE** | GitHub and Microsoft everywhere, Apple on Android and web, Google on web: backend-hosted, one-time code, verifier-bound |
+| :link: | **Connect and Confirm** | Link another provider to a signed-in account, or re-authenticate with a linked one for a step-up proof |
+| :hammer_and_wrench: | **social:install** | Config, iOS Google keys and URL scheme, Sign in with Apple entitlement, Android callback activity, `web/auth.html`, the starter bridge |
+| :stethoscope: | **social:doctor** | Checks the native setup against the config and prints the backend env to set |
+| :electric_plug: | **Extensible Drivers** | Add a provider via `SocialAuth.manager.extend()` |
+| :art: | **Config-Driven UI** | `SocialAuthButtons` renders enabled, platform-supported providers; Apple first on iOS |
+| :package: | **Service Provider** | Two-phase bootstrap via Magic's IoC container |
 
 ---
 
@@ -62,227 +63,176 @@ Adding social login to a Flutter app means juggling platform-specific SDKs, OAut
 
 ```yaml
 dependencies:
-  magic_social_auth: ^0.0.7
+  magic_social_auth: ^0.0.8
 ```
 
-### 2. Register the service provider
+Requires Dart `^3.12.0` and Flutter `>=3.44.0`.
 
-```dart
-// lib/config/app.dart
-import 'package:magic_social_auth/magic_social_auth.dart';
+### 2. Install
 
-Map<String, dynamic> get appConfig => {
-  'app': {
-    'providers': [
-      // ... other providers
-      (app) => SocialAuthServiceProvider(app),
-    ],
-  },
-};
+```bash
+flutter pub get
+dart run fluttersdk_artisan plugin:install magic_social_auth
+dart run <app>:artisan social:install \
+  --providers=google,apple,github,microsoft \
+  --google-ios-client-id=123-abc.apps.googleusercontent.com \
+  --google-server-client-id=123-def.apps.googleusercontent.com \
+  --ios-scheme=myapp \
+  --android-callback=https://auth.example.com/auth/social
 ```
 
-### 3. Create the config file
+Every flag is documented in the [installation guide](https://magic.fluttersdk.com/packages/social-auth/getting-started/installation).
 
-```dart
-// lib/config/social_auth.dart
-import 'package:magic/magic.dart';
+### 3. Check it
 
-Map<String, dynamic> get socialAuthConfig => {
-  'social_auth': {
-    'endpoint': '/auth/social/{provider}',
-    'providers': {
-      'google': {
-        'enabled': true,
-        'client_id': env('GOOGLE_CLIENT_ID'),
-        'server_client_id': env('GOOGLE_SERVER_CLIENT_ID'),
-        'scopes': ['email', 'profile'],
-      },
-      'microsoft': {
-        'enabled': true,
-        'client_id': env('MICROSOFT_CLIENT_ID'),
-        'tenant': env('MICROSOFT_TENANT', 'common'),
-        'callback_scheme': 'myapp',
-        'scopes': ['openid', 'profile', 'email'],
-      },
-      'github': {
-        'enabled': true,
-        'client_id': env('GITHUB_CLIENT_ID'),
-        'callback_scheme': 'myapp',
-        'scopes': ['read:user', 'user:email'],
-      },
-    },
-  },
-};
+```bash
+dart run <app>:artisan social:doctor
 ```
 
-### 4. Register config in main.dart
+The doctor names every missing native edit and prints the `MAGIC_STARTER_SOCIAL_*` lines to set in the backend `.env`, and the callback URL each provider console has to list.
+
+### 4. Sign in
 
 ```dart
-// lib/main.dart
-import 'config/social_auth.dart';
+final SocialAuthResult result = await SocialAuth.driver('google').signIn();
 
-await Magic.init(
-  configFactories: [
-    () => appConfig,
-    () => socialAuthConfig, // Add this
-  ],
+if (result.isTwoFactor) {
+  // Finish at auth/two-factor-challenge with result.twoFactorToken.
+  return;
+}
+
+await Auth.login(
+  {'token': result.token},
+  SocialAuth.manager.createUser(result.user!),
 );
 ```
 
-### 5. Authenticate
-
-```dart
-await SocialAuth.driver('google').authenticate();
-```
-
-That's it — the default `HttpSocialAuthHandler` sends the token to your Laravel backend and logs the user in via Sanctum.
+With `magic_starter` you write none of this: the bridge `social:install` publishes feeds the result into the starter's login, registration and account screens.
 
 ---
 
 ## Configuration
 
-The config file at `lib/config/social_auth.dart` controls everything:
+`social:install` writes `lib/config/social_auth.dart`:
 
 ```dart
 Map<String, dynamic> get socialAuthConfig => {
   'social_auth': {
-    // Backend endpoint for token exchange
-    'endpoint': '/auth/social/{provider}',
-
     'providers': {
       'google': {
         'enabled': true,
-        'client_id': env('GOOGLE_CLIENT_ID'),
-        'server_client_id': env('GOOGLE_SERVER_CLIENT_ID'),
-        'scopes': ['email', 'profile'],
+        'ios_client_id': '123-abc.apps.googleusercontent.com',
+        'server_client_id': '123-def.apps.googleusercontent.com',
       },
-      'microsoft': {
-        'enabled': true,
-        'client_id': env('MICROSOFT_CLIENT_ID'),
-        'tenant': env('MICROSOFT_TENANT', 'common'),
-        'callback_scheme': 'myapp',
-        'scopes': ['openid', 'profile', 'email'],
-      },
-      'github': {
-        'enabled': true,
-        'client_id': env('GITHUB_CLIENT_ID'),
-        'callback_scheme': 'myapp',
-        'scopes': ['read:user', 'user:email'],
-      },
+      'apple': {'enabled': true},
+      'github': {'enabled': true},
+      'microsoft': {'enabled': true},
+    },
+    'callback': {
+      'ios': 'myapp://auth/social',
+      'android': 'https://auth.example.com/auth/social',
     },
   },
 };
 ```
 
-All values are read at runtime via `ConfigRepository`. Provider-specific OAuth setup (Google Cloud Console, Azure Portal, GitHub Developer Settings) is covered in the [configuration docs](https://magic.fluttersdk.com/packages/social-auth/getting-started/configuration).
+The callbacks must equal the backend's `MAGIC_STARTER_SOCIAL_IOS_REDIRECT` and `MAGIC_STARTER_SOCIAL_ANDROID_REDIRECT`. Provider console setup (Google iOS, Android and web clients, the Apple Services ID and key, a GitHub OAuth app, an Entra Web registration) is covered in the [installation guide](https://magic.fluttersdk.com/packages/social-auth/getting-started/installation) and the [configuration reference](https://magic.fluttersdk.com/packages/social-auth/getting-started/configuration).
 
 ---
 
 ## Usage
 
-### Basic Authentication
+### Sign In, Connect, Confirm
 
 ```dart
-await SocialAuth.driver('google').authenticate();
-await SocialAuth.driver('microsoft').authenticate();
-await SocialAuth.driver('github').authenticate();
+final SocialDriver driver = SocialAuth.driver('github');
+
+await driver.signIn();                          // sign in, or register
+await driver.connect({'password': password});   // link to the signed-in account
+await driver.confirm();                         // step-up proof in result.confirmationToken
 ```
+
+`connect` takes the step-up proof the account can give (`password`, a TOTP `code`, or a `confirmation_token` from `confirm()`); a guest sends `null`. On the web, a popup opened after an `await` is blocked: use `beginConnect(proof)` and run the returned opener from a second tap.
 
 ### Check Platform Support
 
 ```dart
-if (SocialAuth.supports('google')) {
-  // Show Google sign-in button
+if (SocialAuth.supports('apple')) {
+  // Show Sign in with Apple
 }
 ```
 
 ### Custom Driver
 
 ```dart
-// Register in your ServiceProvider.boot()
-SocialAuth.manager.extend('apple', (config) => AppleDriver(config));
-
-// Use it
-await SocialAuth.driver('apple').authenticate();
-```
-
-### Custom Auth Handler
-
-Replace the default HTTP handler with your own logic:
-
-```dart
-class FirebaseAuthHandler implements SocialAuthHandler {
-  @override
-  Future<void> handle(SocialToken token) async {
-    final credential = GoogleAuthProvider.credential(
-      idToken: token.idToken,
-      accessToken: token.accessToken,
-    );
-    await FirebaseAuth.instance.signInWithCredential(credential);
-  }
-}
-
-// Register it
-SocialAuth.manager.setHandler(FirebaseAuthHandler());
+SocialAuth.manager.extend('gitlab', (config) => RedirectDriver('gitlab', config));
 ```
 
 ### SocialAuthButtons Widget
 
-Config-driven UI that renders buttons for all enabled, platform-supported providers:
-
 ```dart
 SocialAuthButtons(
-  onAuthenticate: (provider) async {
-    await SocialAuth.driver(provider).authenticate();
-  },
-  loadingProvider: currentlyLoading, // shows spinner on active button
-  mode: SocialAuthMode.signIn,      // or SocialAuthMode.signUp
+  onPressed: (provider) => controller.doSocialSignIn(provider),
+  loadingProvider: currentlyLoading,
+  mode: SocialAuthMode.signIn, // or SocialAuthMode.signUp
 )
 ```
 
-Register UI metadata for custom providers:
-
-```dart
-SocialAuth.manager.registerProviderDefaults('apple', SocialProviderDefaults(
-  label: 'Apple',
-  iconSvg: '<svg>...</svg>',
-  order: 4,
-));
-```
+`onPressed` runs synchronously from the tap, which a web popup needs.
 
 ### Sign Out
 
 ```dart
-await SocialAuth.signOut(); // Clears cached sessions across all providers
+await SocialAuth.signOut(); // signs out every cached driver (Google's SDK session)
 ```
+
+`SocialAuth.signOut()` only reaches drivers cached in this process. An app without `magic_starter` must sign Google out on its own sign-out with `SocialAuth.driver('google').signOut()`; the starter bridge does it for starter apps.
+
+---
+
+## Platform Support
+
+| Provider | iOS | Android | Web |
+|---|---|---|---|
+| Google | native SDK | native SDK | browser flow |
+| Apple | native sheet | browser flow | browser flow |
+| GitHub | browser flow | browser flow | browser flow |
+| Microsoft | browser flow | browser flow | browser flow |
+
+iOS returns through a custom scheme (an https callback needs iOS 17.4). Android returns through an https App Link on a dedicated host. Web uses a popup and `web/auth.html`. macOS, Windows and Linux are not supported.
 
 ---
 
 ## Architecture
 
 ```
-App launch → SocialAuthServiceProvider.register()
-  → binds SocialAuthManager singleton via IoC
-  → SocialAuth facade resolves manager from container
-  → SocialAuth.driver('google') → manager.driver('google')
-    → reads config via ConfigRepository
-    → resolves built-in or custom driver
-  → driver.authenticate()
-    → driver.getToken() (native SDK / OAuth browser)
-    → manager.handleAuth(token) → handler.handle(token)
-    → default handler POSTs to backend → Auth.login()
+SocialAuth.driver('github').signIn()
+  → SocialAuthManager resolves a driver for the platform (Google/Apple native, else RedirectDriver)
+  → SocialFlow: PKCE pair → system browser → backend → callback with a one-time code
+  → POST auth/social/exchange {code, code_verifier}
+  → SocialAuthResult (token + user, or a 2FA challenge)
+  → the caller runs Auth.login
 ```
-
-**Key patterns:**
 
 | Pattern | Implementation |
 |---------|---------------|
-| Singleton Manager | `SocialAuthManager` — central orchestrator |
-| Strategy (Driver) | `GoogleDriver`, `MicrosoftDriver`, `GithubDriver` implement `SocialDriver` |
-| Handler Chain | `SocialAuthHandler` — swap HTTP for Firebase, Supabase, etc. |
+| Singleton Manager | `SocialAuthManager`, central orchestrator |
+| Strategy (Driver) | `GoogleDriver`, `AppleDriver`, `RedirectDriver` implement `SocialDriver` |
+| Flow client | `SocialFlow` speaks the backend protocol; `Pkce` and `Nonce` mint the per-flow secrets |
 | Service Provider | Two-phase bootstrap: `register()` (sync) → `boot()` (async) |
-| IoC Container | Binding via `app.singleton()` / `Magic.make()` |
-| Static Facade | `SocialAuth` — zero-instance access to the manager |
+| Static Facade | `SocialAuth`, zero-instance access to the manager |
+
+---
+
+## Upgrading from 0.0.7
+
+0.0.8 is a breaking release.
+
+- **Removed:** `SocialToken`, `SocialAuthHandler`, the default HTTP handler that posted a provider token and `SocialAuth.manager.setHandler()`, the Microsoft and GitHub drivers (both are a `RedirectDriver` now), `getToken()` and `authenticate()` on drivers, and the per-provider config keys `client_id`, `scopes`, `tenant` and the mobile scheme and web callback URL keys, plus the top-level `endpoint`.
+- **Changed:** drivers answer a `SocialAuthResult`; the app (or the starter bridge) calls `Auth.login`. `SocialAuthButtons` takes `onPressed` instead of `onAuthenticate`.
+- **Added:** Apple, `signIn`, `connect`, `beginConnect`, `confirm`, `social:doctor`, and the `callback.ios` and `callback.android` config keys.
+- **Raised:** Dart `^3.12.0`, Flutter `>=3.44.0`, `fluttersdk_artisan ^0.0.18`.
+- **Backend:** requires `magic-starter-laravel` with the `social-login` feature.
 
 ---
 
@@ -290,11 +240,11 @@ App launch → SocialAuthServiceProvider.register()
 
 | Document | Description |
 |----------|-------------|
-| [Installation](https://magic.fluttersdk.com/packages/social-auth/getting-started/installation) | Adding the package and registering the provider |
-| [Configuration](https://magic.fluttersdk.com/packages/social-auth/getting-started/configuration) | Config reference, OAuth setup for Google/Microsoft/GitHub |
-| [Drivers](https://magic.fluttersdk.com/packages/social-auth/basics/drivers) | Built-in drivers and writing custom ones |
-| [Handlers](https://magic.fluttersdk.com/packages/social-auth/basics/handlers) | Default HTTP handler and custom handler implementations |
-| [Architecture](https://magic.fluttersdk.com/packages/social-auth/architecture/overview) | Manager, facade, driver, and handler patterns |
+| [Installation](https://magic.fluttersdk.com/packages/social-auth/getting-started/installation) | `social:install` flags, `social:doctor`, backend env, provider consoles, platform notes |
+| [Configuration](https://magic.fluttersdk.com/packages/social-auth/getting-started/configuration) | Every config key |
+| [Drivers](https://magic.fluttersdk.com/packages/social-auth/basics/drivers) | The driver contract, built-in drivers and custom ones |
+| [Flows](https://magic.fluttersdk.com/packages/social-auth/basics/flows) | Native token flow, browser flow, connect, confirm, errors |
+| [Architecture](https://magic.fluttersdk.com/packages/social-auth/architecture/overview) | Manager, facade, driver and flow client |
 
 ---
 
