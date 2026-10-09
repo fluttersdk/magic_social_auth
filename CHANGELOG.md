@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-10-09
+
+### Changed
+
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.24` to `^0.0.27` and `fluttersdk_artisan` `^0.0.18` to `^0.0.19`. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floors name the releases this package is verified against. None of magic 0.0.25 to 0.0.27 or artisan 0.0.19 is breaking; artisan 0.0.19 widens its `xml` constraint to admit 7.x, which a consumer now inherits. The requirements table in `doc/getting-started/installation.md` quotes the new floors. (`pubspec.yaml`, `doc/getting-started/installation.md`)
+
 ## [0.0.8] - 2026-10-05
 
 Requires `magic-starter-laravel` with its redesigned social login (`auth/social/{provider}/redirect`, `auth/social/exchange`, `auth/social/{provider}/token`, `user/social-accounts/link-ticket`).
