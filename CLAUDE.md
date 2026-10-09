@@ -2,7 +2,7 @@
 
 Social authentication plugin for Magic Framework: the client of magic-starter-laravel's social login (native Google and Apple sheets, a backend-hosted browser flow with PKCE for the rest). Laravel Socialite-style API with extensible drivers.
 
-**Version:** 0.0.8 · **Dart:** ^3.12.0 · **Flutter:** >=3.44.0
+**Version:** 0.0.9 · **Dart:** ^3.12.0 · **Flutter:** >=3.44.0
 
 ## Commands
 
