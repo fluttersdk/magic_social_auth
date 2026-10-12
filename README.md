@@ -63,7 +63,7 @@ Adding social login to a Flutter app means juggling platform SDKs, OAuth redirec
 
 ```yaml
 dependencies:
-  magic_social_auth: ^0.0.9
+  magic_social_auth: ^0.0.10
 ```
 
 Requires Dart `^3.12.0` and Flutter `>=3.44.0`.

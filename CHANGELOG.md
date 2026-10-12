@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-10-13
+
+### Changed
+
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.27` to `^0.0.28` and `fluttersdk_artisan` `^0.0.19` to `^0.0.20`. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floors name the releases this package is verified against. Neither magic 0.0.28 nor artisan 0.0.20 is breaking; artisan 0.0.20 makes a connected command that reaches an extension the app has not registered yet print one retry line and exit 75 instead of an RPC stack, and this package calls no extension, so `social:install` and `social:doctor` behave as before. The requirements table in `doc/getting-started/installation.md` quotes the new floors. (`pubspec.yaml`, `doc/getting-started/installation.md`)
+
 ## [0.0.9] - 2026-10-09
 
 ### Changed
